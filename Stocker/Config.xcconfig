@@ -1,0 +1,3 @@
+// Config.xcconfig — safe to commit, contains no secrets
+// Pulls in the local secrets file from outside the repo
+#include? "/Users/garett/secrets.xcconfig"
