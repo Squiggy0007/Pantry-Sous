@@ -235,6 +235,8 @@ enum IngredientCategory: String, Codable, CaseIterable {
             "drink mix", "kool aid", "powdered lemonade",
             "sparkling water", "club soda", "tonic water",
             "soda", "cola", "juice box",
+            "juice", "lemon juice", "lime juice", "orange juice", "apple juice",
+            "papaya juice", "fruit juice",
             "beer", "wine", "white wine", "red wine", "champagne",
             "vodka", "rum", "whiskey", "bourbon", "tequila", "gin",
             "cooking sherry", "vermouth",

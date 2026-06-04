@@ -945,6 +945,13 @@ struct IngredientNormalizer {
         "arrabiata sauce": "marinara",
         "tomato paste": "tomato paste",
 
+        // ── PANTRY — JUICES ───────────────────────────────────────────────
+        "lemon juice": "lemon juice",
+        "lime juice": "lime juice",
+        "orange juice": "orange juice",
+        "apple juice": "apple juice",
+        "papaya juice": "papaya juice",
+
         // ── PANTRY — BEANS (kept SPECIFIC) ───────────────────────────────
         "black beans": "black beans",
         "canned black beans": "black beans",
@@ -1402,6 +1409,9 @@ struct IngredientNormalizer {
         "old bay": "old bay",
         "old bay seasoning": "old bay",
         "jerk seasoning": "jerk seasoning",
+        "jamaican jerk": "jerk seasoning",
+        "caribbean jerk": "jerk seasoning",
+        "jerk marinade": "jerk seasoning",
         "italian seasoning": "italian seasoning",
         "herbs de provence": "herbs de provence",
         "za'atar": "za'atar",
@@ -1550,7 +1560,44 @@ struct IngredientNormalizer {
         if let normalized = normalizationMap[lowercased] {
             names.insert(normalized)
         }
+        for embeddedName in embeddedIngredientNames(in: lowercased) {
+            names.insert(embeddedName)
+            if let normalized = normalizationMap[embeddedName] {
+                names.insert(normalized)
+            }
+        }
         return Array(names)
+    }
+
+    private static func embeddedIngredientNames(in name: String) -> [String] {
+        let cleaned = name
+            .replacingOccurrences(of: "&", with: " ")
+            .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        let words = cleaned.split(separator: " ")
+        guard words.count > 1 else { return [] }
+
+        let padded = " \(cleaned) "
+        let singleWordAllowed: Set<String> = [
+            "basil", "oregano", "garlic", "thyme", "rosemary", "parsley",
+            "cilantro", "dill", "sage", "mint", "chives", "papaya"
+        ]
+
+        return normalizationMap.keys.filter { candidate in
+            if !candidate.contains(" "), !singleWordAllowed.contains(candidate) {
+                return false
+            }
+            let cleanedCandidate = candidate
+                .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            guard cleanedCandidate.count >= 4 else { return false }
+            return padded.contains(" \(cleanedCandidate) ")
+        }
     }
 
     // MARK: - Egg Detection

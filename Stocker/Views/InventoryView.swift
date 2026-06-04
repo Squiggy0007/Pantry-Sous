@@ -150,6 +150,19 @@ struct InventoryView: View {
                     for item in legacyItems { item.category = .pantry }
                     try? modelContext.save()
                 }
+
+                // Fix obvious barcode/category misses from broad product tags.
+                let categoryFixes = allIngredients.filter { item in
+                    let suggested = IngredientCategory.suggested(for: item.name)
+                    return [.produce, .dairy, .other].contains(item.category) &&
+                           [.pantry, .herbsAndSpices].contains(suggested)
+                }
+                if !categoryFixes.isEmpty {
+                    for item in categoryFixes {
+                        item.category = IngredientCategory.suggested(for: item.name)
+                    }
+                    try? modelContext.save()
+                }
             }
             .toolbar {
                 // Settings gear — top left, persists on all tabs via MainTabView

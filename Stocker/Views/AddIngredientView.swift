@@ -530,6 +530,11 @@ struct AddIngredientView: View {
     /// tomato-based products with both "en:vegetables-based-foods" AND "en:sauces".
     private func detectCategory(from tags: [String], productName: String) -> IngredientCategory {
         let allTags = tags.joined(separator: " ").lowercased()
+        let nameSuggestion = IngredientCategory.suggested(for: productName)
+
+        if nameSuggestion == .pantry || nameSuggestion == .herbsAndSpices {
+            return nameSuggestion
+        }
 
         // 1. Dairy first (before protein — avoids "dairy-free" false positives)
         if allTags.contains("dairies") || allTags.contains("dairy") ||
@@ -573,7 +578,7 @@ struct AddIngredientView: View {
         // 5. Produce (after pantry so processed tomato/vegetable products don't land here)
         if allTags.contains(":vegetables") || allTags.contains(":fruits") ||
            allTags.contains("fresh-produce") {
-            return .produce
+            return nameSuggestion == .other ? .produce : nameSuggestion
         }
         // 6. Herbs & Spices
         if allTags.contains("spices") || allTags.contains(":herbs") ||
@@ -582,7 +587,7 @@ struct AddIngredientView: View {
         }
 
         // Fall back to name-based detection
-        return IngredientCategory.suggested(for: productName)
+        return nameSuggestion
     }
 
     // MARK: - Save
@@ -654,6 +659,7 @@ struct AddIngredientView: View {
                 quantityAmount: amount,
                 quantityUnit: unit,
                 category: selectedCategory,
+                barcode: scannedBarcode.isEmpty ? nil : scannedBarcode,
                 containerSize: containerSize,
                 containerSizeUnit: containerSize > 0 ? containerSizeUnit : nil,
                 servingSize:    nutrition.servingSize,

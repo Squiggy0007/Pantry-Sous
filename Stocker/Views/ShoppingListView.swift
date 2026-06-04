@@ -564,13 +564,17 @@ struct ShoppingListView: View {
 
     private func detectShopCategory(from tags: [String], name: String) -> IngredientCategory {
         let t = tags.joined(separator: " ").lowercased()
+        let nameSuggestion = IngredientCategory.suggested(for: name)
+        if nameSuggestion == .pantry || nameSuggestion == .herbsAndSpices {
+            return nameSuggestion
+        }
         if t.contains("dairies") || t.contains("dairy") || t.contains("milks") || t.contains("cheeses") || t.contains("yogurts") || t.contains("butter") { return .dairy }
         if t.contains("meats") || t.contains("poultry") || t.contains("seafood") || t.contains("fish") || t.contains("beef") || t.contains("chicken") || t.contains("pork") { return .protein }
         if t.contains("canned") || t.contains("preserved") || t.contains("condiments") || t.contains("sauces") || t.contains("soups") || t.contains("broths") { return .pantry }
-        if t.contains("vegetables") || t.contains("produce") || t.contains("fruits") { return .produce }
+        if t.contains("vegetables") || t.contains("produce") || t.contains("fruits") { return nameSuggestion == .other ? .produce : nameSuggestion }
         if t.contains("cereals") || t.contains("pasta") || t.contains("breads") || t.contains("flour") || t.contains("rice") || t.contains("crackers") || t.contains("snack") { return .pantry }
         if t.contains("spices") || t.contains("herbs") || t.contains("seasonings") { return .herbsAndSpices }
-        return IngredientCategory.suggested(for: name)
+        return nameSuggestion
     }
 
     // MARK: - Existing Helpers

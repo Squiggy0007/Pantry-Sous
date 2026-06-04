@@ -18,8 +18,11 @@ class RecipesViewModel {
     // Swift's hashValue is randomised per process — never use it as a disk cache key.
     // Instead, sort ingredients alphabetically and build a deterministic hex digest.
     private func stableCacheKey(for ingredients: [Ingredient]) -> String {
-        let sorted = ingredients.sorted { $0.name < $1.name }
-        let raw = sorted.map { $0.name.lowercased() }.joined(separator: ",")
+        let normalizedNames = ingredients
+            .flatMap { IngredientNormalizer.normalizedNames(for: $0.name) }
+            .map { $0.lowercased() }
+            .sorted()
+        let raw = "recipes_v3|" + normalizedNames.joined(separator: ",")
         // djb2 hash — deterministic across launches
         let hash = raw.utf8.reduce(UInt64(5381)) { (($0 << 5) &+ $0) &+ UInt64($1) }
         return String(hash, radix: 16)
@@ -102,13 +105,13 @@ class RecipesViewModel {
             recipe.missedIngredientCount == 0
         }
 
-        // Filter to ≥50% match, then sort descending by match percentage
+        // Show every useful partial match. Browse is for exploring broadly;
+        // Recipes should surface anything connected to the user's inventory.
         almostThereRecipes = cachedAllRecipes
             .filter { recipe in
                 let total = recipe.usedIngredientCount + recipe.missedIngredientCount
                 guard total > 0 else { return false }
-                let pct = Double(recipe.usedIngredientCount) / Double(total)
-                return pct >= 0.5 && recipe.missedIngredientCount > 0
+                return recipe.usedIngredientCount > 0 && recipe.missedIngredientCount > 0
             }
             .sorted { a, b in
                 let totalA = a.usedIngredientCount + a.missedIngredientCount
