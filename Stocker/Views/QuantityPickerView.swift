@@ -310,7 +310,7 @@ private struct BarcodeQuantityWheelView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 18)
                         .fill(Color("BackgroundSecondary"))
-                        .frame(height: 48)
+                        .frame(width: 68, height: 48)
 
                     Picker("Amount", selection: selectedCount) {
                         ForEach(1...99, id: \.self) { count in
@@ -321,10 +321,10 @@ private struct BarcodeQuantityWheelView: View {
                     }
                     .pickerStyle(.wheel)
                     .labelsHidden()
-                    .frame(width: 92, height: 136)
+                    .frame(width: 68, height: 136)
                     .clipped()
                 }
-                .frame(width: 110, height: 136)
+                .frame(width: 72, height: 136)
                 .accessibilityLabel("Quantity")
                 .accessibilityValue("\(selectedCount.wrappedValue)")
 
