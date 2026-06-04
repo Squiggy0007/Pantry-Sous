@@ -410,6 +410,7 @@ struct ShoppingListView: View {
                 // Category
                 let tags = product["categories_tags"] as? [String] ?? []
                 scanCategory = detectShopCategory(from: tags, name: scanName)
+                normalizeShopScannedSeasoningUnit()
 
                 // ── Step 2: USDA — accurate nutrition by product name ──
                 let usdaNutr = await USDANutritionService.lookupNutrition(forProduct: scanName)
@@ -575,6 +576,12 @@ struct ShoppingListView: View {
         if t.contains("cereals") || t.contains("pasta") || t.contains("breads") || t.contains("flour") || t.contains("rice") || t.contains("crackers") || t.contains("snack") { return .pantry }
         if t.contains("spices") || t.contains("herbs") || t.contains("seasonings") { return .herbsAndSpices }
         return nameSuggestion
+    }
+
+    private func normalizeShopScannedSeasoningUnit() {
+        guard scanCategory == .herbsAndSpices else { return }
+        guard [.item, .bag, .box, .package, .packet].contains(scanUnit) else { return }
+        scanUnit = .bottle
     }
 
     // MARK: - Existing Helpers

@@ -27,6 +27,8 @@ enum IngredientCategory: String, Codable, CaseIterable {
     static func suggested(for name: String) -> IngredientCategory {
         let n = name.lowercased().trimmingCharacters(in: .whitespaces)
 
+        if isSeasoningFormName(n) { return .herbsAndSpices }
+
         // ─────────────────────────────────────────────────────────────────
         // PANTRY — checked FIRST
         // Must come before protein to prevent "chicken broth" → protein
@@ -680,5 +682,24 @@ enum IngredientCategory: String, Codable, CaseIterable {
         // PANTRY — default fallback for anything unrecognized
         // ─────────────────────────────────────────────────────────────────
         return .pantry
+    }
+
+    private static func isSeasoningFormName(_ name: String) -> Bool {
+        let seasoningFormWords = ["minced", "ground", "chopped", "dried", "powder", "flakes", "flake"]
+        guard seasoningFormWords.contains(where: { name.contains($0) }) else { return false }
+
+        let notSeasoningWords = [
+            "ground beef", "minced beef", "ground chicken", "minced chicken",
+            "ground turkey", "minced turkey", "ground pork", "minced pork",
+            "ground lamb", "minced lamb", "ground bison", "ground venison",
+            "powdered sugar", "confectioners sugar", "icing sugar",
+            "baking powder", "cocoa powder", "protein powder", "collagen powder",
+            "dried cranberry", "dried cranberries", "dried cherry", "dried cherries",
+            "dried apricot", "dried apricots", "dried mango", "dried blueberry",
+            "dried blueberries", "dried fig", "dried figs", "dried plum",
+            "dried pineapple", "dried apple", "dried banana"
+        ]
+
+        return !notSeasoningWords.contains(where: { name.contains($0) })
     }
 }

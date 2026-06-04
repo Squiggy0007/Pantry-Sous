@@ -163,6 +163,19 @@ struct InventoryView: View {
                     }
                     try? modelContext.save()
                 }
+
+                let seasoningUnitFixes = allIngredients.filter { item in
+                    let unit = QuantityUnit(rawValue: item.quantityUnit) ?? .item
+                    return item.category == .herbsAndSpices &&
+                           [.item, .bag, .box, .package, .packet].contains(unit) &&
+                           (item.containerSize > 0 || item.hasNutritionData || item.barcode != nil)
+                }
+                if !seasoningUnitFixes.isEmpty {
+                    for item in seasoningUnitFixes {
+                        item.quantityUnit = QuantityUnit.bottle.rawValue
+                    }
+                    try? modelContext.save()
+                }
             }
             .toolbar {
                 // Settings gear — top left, persists on all tabs via MainTabView

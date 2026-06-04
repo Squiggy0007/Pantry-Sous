@@ -1595,7 +1595,7 @@ struct IngredientNormalizer {
             "vanilla extract", "almond extract", "lemon extract", "orange extract"
         ]
 
-        return baseProductPhrases.filter { candidate in
+        let baseMatches = baseProductPhrases.filter { candidate in
             let cleanedCandidate = candidate
                 .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
                 .components(separatedBy: .whitespacesAndNewlines)
@@ -1603,6 +1603,29 @@ struct IngredientNormalizer {
                 .joined(separator: " ")
             return padded.contains(" \(cleanedCandidate) ")
         }
+        if !baseMatches.isEmpty { return Array(baseMatches) }
+
+        let seasoningProductNames: Set<String> = [
+            "basil", "oregano", "thyme", "rosemary", "parsley", "dill", "sage",
+            "mint", "cilantro", "chives", "tarragon", "marjoram", "bay leaf",
+            "chili powder", "garlic powder", "onion powder", "ginger powder",
+            "curry powder", "cumin", "paprika", "smoked paprika", "cayenne",
+            "cayenne pepper", "red pepper flakes", "pepper flakes",
+            "crushed red pepper", "black pepper", "ground black pepper",
+            "ground pepper", "cinnamon", "ground cinnamon", "nutmeg",
+            "ground nutmeg", "cloves", "ground cloves", "turmeric",
+            "ground turmeric", "italian seasoning", "taco seasoning",
+            "fajita seasoning", "jerk seasoning", "old bay", "garam masala"
+        ]
+
+        return Array(seasoningProductNames.filter { candidate in
+            let cleanedCandidate = candidate
+                .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            return padded.contains(" \(cleanedCandidate) ")
+        })
     }
 
     // MARK: - Egg Detection

@@ -352,6 +352,7 @@ struct AddIngredientView: View {
             // --- Category ---
             let categoryTags = product["categories_tags"] as? [String] ?? []
             selectedCategory = detectCategory(from: categoryTags, productName: name)
+            normalizeScannedSeasoningUnit(hintParts: &hintParts)
             hintParts.append(selectedCategory.rawValue)
 
             // Hard override: canned/jarred unit can't be fresh produce
@@ -379,6 +380,8 @@ struct AddIngredientView: View {
                     unit = isDry ? .box : .can
                     hintParts.insert(isDry ? "box" : "can", at: 0)
                 case .dairy:
+                    unit = .bottle; hintParts.insert("bottle", at: 0)
+                case .herbsAndSpices:
                     unit = .bottle; hintParts.insert("bottle", at: 0)
                 case .produce:
                     break
@@ -523,6 +526,18 @@ struct AddIngredientView: View {
         size.truncatingRemainder(dividingBy: 1) == 0
             ? String(Int(size))
             : String(format: "%.1f", size)
+    }
+
+    private func normalizeScannedSeasoningUnit(hintParts: inout [String]) {
+        guard selectedCategory == .herbsAndSpices else { return }
+        guard [.item, .bag, .box, .package, .packet].contains(unit) else { return }
+
+        unit = .bottle
+        if let index = hintParts.firstIndex(where: { ["bag", "box", "package", "packet", "container"].contains($0) }) {
+            hintParts[index] = "bottle"
+        } else {
+            hintParts.insert("bottle", at: 0)
+        }
     }
 
     /// Maps Open Food Facts category tags to IngredientCategory.
