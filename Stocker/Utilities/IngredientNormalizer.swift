@@ -1560,7 +1560,7 @@ struct IngredientNormalizer {
         if let normalized = normalizationMap[lowercased] {
             names.insert(normalized)
         }
-        for embeddedName in embeddedIngredientNames(in: lowercased) {
+        for embeddedName in embeddedBaseProductNames(in: lowercased) {
             names.insert(embeddedName)
             if let normalized = normalizationMap[embeddedName] {
                 names.insert(normalized)
@@ -1569,7 +1569,7 @@ struct IngredientNormalizer {
         return Array(names)
     }
 
-    private static func embeddedIngredientNames(in name: String) -> [String] {
+    private static func embeddedBaseProductNames(in name: String) -> [String] {
         let cleaned = name
             .replacingOccurrences(of: "&", with: " ")
             .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
@@ -1581,21 +1581,26 @@ struct IngredientNormalizer {
         guard words.count > 1 else { return [] }
 
         let padded = " \(cleaned) "
-        let singleWordAllowed: Set<String> = [
-            "basil", "oregano", "garlic", "thyme", "rosemary", "parsley",
-            "cilantro", "dill", "sage", "mint", "chives", "papaya"
+
+        // Barcode product names often include brand + flavor callouts.
+        // Extract only the base packaged product, never flavor ingredients.
+        let baseProductPhrases: Set<String> = [
+            "tomato paste", "tomato sauce", "tomato puree", "diced tomatoes",
+            "crushed tomatoes", "canned tomatoes", "marinara sauce", "pasta sauce",
+            "lemon juice", "lime juice", "orange juice", "apple juice",
+            "chicken broth", "beef broth", "vegetable broth", "bone broth",
+            "soy sauce", "hot sauce", "bbq sauce", "barbecue sauce", "teriyaki sauce",
+            "jerk seasoning", "jerk marinade", "jamaican jerk", "caribbean jerk",
+            "peanut butter", "almond butter", "coconut milk", "coconut cream",
+            "vanilla extract", "almond extract", "lemon extract", "orange extract"
         ]
 
-        return normalizationMap.keys.filter { candidate in
-            if !candidate.contains(" "), !singleWordAllowed.contains(candidate) {
-                return false
-            }
+        return baseProductPhrases.filter { candidate in
             let cleanedCandidate = candidate
                 .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
                 .components(separatedBy: .whitespacesAndNewlines)
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
-            guard cleanedCandidate.count >= 4 else { return false }
             return padded.contains(" \(cleanedCandidate) ")
         }
     }
