@@ -22,7 +22,7 @@ class RecipesViewModel {
             .flatMap { IngredientNormalizer.normalizedNames(for: $0.name) }
             .map { $0.lowercased() }
             .sorted()
-        let raw = "recipes_v3|" + normalizedNames.joined(separator: ",")
+        let raw = "recipes_v4|" + normalizedNames.joined(separator: ",")
         // djb2 hash — deterministic across launches
         let hash = raw.utf8.reduce(UInt64(5381)) { (($0 << 5) &+ $0) &+ UInt64($1) }
         return String(hash, radix: 16)

@@ -219,7 +219,7 @@ struct BrowseFeedCardView: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             // Recipe image
             CachedAsyncImage(url: URL(string: recipe.image)) { phase in
                 switch phase {
@@ -241,27 +241,31 @@ struct BrowseFeedCardView: View {
                         .overlay(ProgressView())
                 }
             }
-            .frame(width: 100, height: 100)
+            .frame(width: 88, height: 88)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(recipe.title)
                     .font(.system(.subheadline, design: .rounded, weight: .semibold))
                     .foregroundStyle(Color("TextPrimary"))
                     .lineLimit(2)
 
-                HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     if let minutes = recipe.readyInMinutes, minutes > 0 {
                         Label("\(minutes) min", systemImage: "clock")
                             .font(.system(.caption, design: .rounded))
                             .foregroundStyle(Color("TextSecondary"))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
+
                     if matchPercentage > 0 {
                         Text("\(matchPercentage)% match")
                             .font(.system(.caption, design: .rounded, weight: .semibold))
                             .foregroundStyle(matchPercentage == 100
                                              ? Color("AccentSage")
                                              : Color("DestructiveTerracotta"))
+                            .lineLimit(1)
                     }
                 }
 
@@ -273,6 +277,8 @@ struct BrowseFeedCardView: View {
                         Text("Need \(recipe.missedIngredientCount) ingredient\(recipe.missedIngredientCount == 1 ? "" : "s")")
                             .font(.system(.caption2, design: .rounded))
                             .foregroundStyle(Color("TextSecondary"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                     }
                 } else if recipe.usedIngredientCount > 0 {
                     HStack(spacing: 4) {
@@ -282,11 +288,13 @@ struct BrowseFeedCardView: View {
                         Text("You have everything!")
                             .font(.system(.caption2, design: .rounded))
                             .foregroundStyle(Color("AccentSage"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                     }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
             VStack(spacing: 8) {
                 if let onAddMissing {

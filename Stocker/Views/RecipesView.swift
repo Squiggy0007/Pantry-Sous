@@ -494,7 +494,7 @@ struct RecipeFeedCardView: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             CachedAsyncImage(url: URL(string: recipe.image)) { phase in
                 switch phase {
                 case .success(let image):
@@ -515,42 +515,48 @@ struct RecipeFeedCardView: View {
                         .overlay(ProgressView())
                 }
             }
-            .frame(width: 100, height: 100)
+            .frame(width: 88, height: 88)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(recipe.title)
                     .font(.system(.subheadline, design: .rounded, weight: .semibold))
                     .foregroundStyle(Color("TextPrimary"))
                     .lineLimit(2)
 
-                HStack(spacing: 8) {
-                    if let minutes = recipe.readyInMinutes, minutes > 0 {
-                        Label("\(minutes) min", systemImage: "clock")
-                            .font(.system(.caption, design: .rounded))
-                            .foregroundStyle(Color("TextSecondary"))
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        if let minutes = recipe.readyInMinutes, minutes > 0 {
+                            Label("\(minutes) min", systemImage: "clock")
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(Color("TextSecondary"))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+
+                        if let score = recipe.spoonacularScore, score > 0 {
+                            HStack(spacing: 3) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 9))
+                                Text("\(Int(score))")
+                                    .font(.system(.caption2, design: .rounded, weight: .bold))
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color("AccentSage").opacity(0.15))
+                            )
+                            .foregroundStyle(Color("AccentSage"))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                        }
                     }
 
                     Text("\(matchPercentage)% match")
                         .font(.system(.caption, design: .rounded, weight: .semibold))
                         .foregroundStyle(Color("DestructiveTerracotta"))
-
-                    // Score badge
-                    if let score = recipe.spoonacularScore, score > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 9))
-                            Text("\(Int(score))")
-                                .font(.system(.caption2, design: .rounded, weight: .bold))
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color("AccentSage").opacity(0.15))
-                        )
-                        .foregroundStyle(Color("AccentSage"))
-                    }
+                        .lineLimit(1)
                 }
 
                 if recipe.missedIngredientCount > 0 {
@@ -562,11 +568,12 @@ struct RecipeFeedCardView: View {
                             .font(.system(.caption2, design: .rounded))
                             .foregroundStyle(Color("TextSecondary"))
                             .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
             VStack(spacing: 8) {
                 if let onAddMissing {
