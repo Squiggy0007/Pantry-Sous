@@ -102,7 +102,42 @@ class SpoonacularService {
                 ComplexSearchResponse.self,
                 from: data
             )
-            return searchResponse.results
+
+            // Re-run our own normalizer on the API results so card counts
+            // match the same logic used in RecipeDetailView (fixes mismatch
+            // between Spoonacular's internal matching and ours).
+            let inventorySet = Set(
+                ingredients.flatMap { IngredientNormalizer.normalizedNames(for: $0.name) }
+            )
+
+            return searchResponse.results.map { recipe in
+                var used: [RecipeIngredient] = []
+                var missed: [RecipeIngredient] = []
+
+                for ingredient in recipe.usedIngredients + recipe.missedIngredients {
+                    let names = Set(IngredientNormalizer.normalizedNames(for: ingredient.name))
+                    let isOwned = !names.isDisjoint(with: inventorySet)
+                    let isStaple = PantryStaplesManager.isStapleSync(ingredient.name)
+                    if isOwned || isStaple {
+                        used.append(ingredient)
+                    } else {
+                        missed.append(ingredient)
+                    }
+                }
+
+                return SpoonacularRecipe(
+                    id: recipe.id,
+                    title: recipe.title,
+                    image: recipe.image,
+                    readyInMinutes: recipe.readyInMinutes,
+                    servings: recipe.servings,
+                    usedIngredientCount: used.count,
+                    missedIngredientCount: missed.count,
+                    missedIngredients: missed,
+                    usedIngredients: used,
+                    spoonacularScore: recipe.spoonacularScore
+                )
+            }
         } catch {
             print("DEBUG: Decoding error: \(error)")
             throw SpoonacularError.decodingError
@@ -286,11 +321,139 @@ class SpoonacularService {
                 ComplexSearchResponse.self,
                 from: data
             )
-            return searchResponse.results
+            return await hydrateBrowseResults(
+                searchResponse.results,
+                inventoryIngredients: inventoryIngredients
+            )
         } catch {
             print("DEBUG: Decoding error: \(error)")
             throw SpoonacularError.decodingError
         }
+    }
+
+    private func hydrateBrowseResults(
+        _ recipes: [SpoonacularRecipe],
+        inventoryIngredients: [Ingredient]
+    ) async -> [SpoonacularRecipe] {
+        let ids = recipes.map(\.id)
+        guard !ids.isEmpty else { return [] }
+
+        do {
+            var components = URLComponents(string: "\(baseURL)/recipes/informationBulk")!
+            components.queryItems = [
+                URLQueryItem(name: "apiKey", value: apiKey),
+                URLQueryItem(name: "ids", value: ids.map(String.init).joined(separator: ",")),
+                URLQueryItem(name: "includeNutrition", value: "false")
+            ]
+
+            guard let url = components.url else {
+                throw SpoonacularError.invalidURL
+            }
+
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                throw SpoonacularError.invalidResponse
+            }
+
+            let details = try JSONDecoder().decode([BulkRecipeDetail].self, from: data)
+            let detailsById = Dictionary(uniqueKeysWithValues: details.map { ($0.id, $0) })
+
+            return recipes.map { recipe in
+                guard let detail = detailsById[recipe.id],
+                      !detail.extendedIngredients.isEmpty else {
+                    return matchedRecipe(
+                        recipe,
+                        ingredients: recipe.usedIngredients + recipe.missedIngredients,
+                        inventoryIngredients: inventoryIngredients
+                    )
+                }
+
+                let fullIngredients = detail.extendedIngredients.map {
+                    RecipeIngredient(
+                        id: $0.id,
+                        name: $0.name,
+                        original: $0.original,
+                        amount: $0.amount,
+                        unit: $0.unit,
+                        image: nil
+                    )
+                }
+
+                return matchedRecipe(
+                    SpoonacularRecipe(
+                        id: recipe.id,
+                        title: detail.title ?? recipe.title,
+                        image: detail.image?.isEmpty == false ? detail.image! : recipe.image,
+                        readyInMinutes: detail.readyInMinutes ?? recipe.readyInMinutes,
+                        servings: detail.servings ?? recipe.servings,
+                        usedIngredientCount: recipe.usedIngredientCount,
+                        missedIngredientCount: recipe.missedIngredientCount,
+                        missedIngredients: recipe.missedIngredients,
+                        usedIngredients: recipe.usedIngredients,
+                        spoonacularScore: detail.spoonacularScore ?? recipe.spoonacularScore
+                    ),
+                    ingredients: fullIngredients,
+                    inventoryIngredients: inventoryIngredients
+                )
+            }
+        } catch {
+            print("DEBUG: Browse detail hydration failed: \(error)")
+            return recipes.map {
+                matchedRecipe(
+                    $0,
+                    ingredients: $0.usedIngredients + $0.missedIngredients,
+                    inventoryIngredients: inventoryIngredients
+                )
+            }
+        }
+    }
+
+    private struct BulkRecipeDetail: Codable {
+        let id: Int
+        let title: String?
+        let image: String?
+        let readyInMinutes: Int?
+        let servings: Int?
+        let extendedIngredients: [ExtendedIngredient]
+        let spoonacularScore: Double?
+    }
+
+    private func matchedRecipe(
+        _ recipe: SpoonacularRecipe,
+        ingredients: [RecipeIngredient],
+        inventoryIngredients: [Ingredient]
+    ) -> SpoonacularRecipe {
+        let inventorySet = Set(
+            inventoryIngredients.flatMap { IngredientNormalizer.normalizedNames(for: $0.name) }
+        )
+
+        var used: [RecipeIngredient] = []
+        var missed: [RecipeIngredient] = []
+
+        for ingredient in ingredients {
+            let names = Set(IngredientNormalizer.normalizedNames(for: ingredient.name))
+            let isOwned = !names.isDisjoint(with: inventorySet)
+            let isStaple = PantryStaplesManager.isStapleSync(ingredient.name)
+            if isOwned || isStaple {
+                used.append(ingredient)
+            } else {
+                missed.append(ingredient)
+            }
+        }
+
+        return SpoonacularRecipe(
+            id: recipe.id,
+            title: recipe.title,
+            image: recipe.image,
+            readyInMinutes: recipe.readyInMinutes,
+            servings: recipe.servings,
+            usedIngredientCount: used.count,
+            missedIngredientCount: missed.count,
+            missedIngredients: missed,
+            usedIngredients: used,
+            spoonacularScore: recipe.spoonacularScore
+        )
     }
 
     // MARK: - Generic Nutrition

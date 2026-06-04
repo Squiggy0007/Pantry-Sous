@@ -118,17 +118,26 @@ struct RecipesView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if selectedSegment == 0 {
-                        Button {
-                            HapticFeedback.medium()
+                    Button {
+                        HapticFeedback.medium()
+                        if selectedSegment == 0 {
                             Task {
                                 await viewModel.loadRecipes(ingredients: allIngredients, force: true)
                             }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(Color("AccentSage"))
+                        } else {
+                            // Clear browse cache for current category and reload fresh
+                            Task {
+                                await browseViewModel.loadRecipes(
+                                    for: browseViewModel.selectedCategory,
+                                    inventory: allIngredients,
+                                    force: true
+                                )
+                            }
                         }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color("AccentSage"))
                     }
                 }
             }
@@ -400,6 +409,7 @@ struct RecipesView: View {
                 }
             }
             .padding(.top, 8)
+            .frame(maxWidth: .infinity)
         }
         .refreshable {
             await viewModel.loadRecipes(ingredients: allIngredients, force: true)
@@ -465,6 +475,7 @@ struct RecipesView: View {
             }
             .id(browseViewModel.selectedCategory)
             .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
         }
     }
 }

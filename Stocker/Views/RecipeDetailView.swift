@@ -48,6 +48,12 @@ struct RecipeDetailView: View {
         return (owned, total)
     }
 
+    var missingDetailIngredientCount: Int {
+        nonStapleIngredients.filter {
+            !IngredientNormalizer.matches($0.name, against: inventoryNames)
+        }.count
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -137,6 +143,7 @@ struct RecipeDetailView: View {
 
     // MARK: - Recipe Content
     private func recipeContent(detail: RecipeDetail) -> some View {
+        GeometryReader { proxy in
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
 
@@ -159,7 +166,7 @@ struct RecipeDetailView: View {
                             .overlay(ProgressView())
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 260)
+                .frame(width: proxy.size.width, height: 260)
                 .clipped()
 
                 VStack(alignment: .leading, spacing: 20) {
@@ -169,10 +176,10 @@ struct RecipeDetailView: View {
                         Text(detail.title)
                             .font(.system(.title2, design: .rounded, weight: .bold))
                             .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .foregroundStyle(Color("TextPrimary"))
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                          HStack(spacing: 12) {
+                        HStack(spacing: 12) {
                             if let minutes = detail.readyInMinutes, minutes > 0 {
                                 StatPillView(icon: "clock", value: "\(minutes) min")
                             }
@@ -234,8 +241,7 @@ struct RecipeDetailView: View {
                                 )
                             }
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     // Ingredient progress pill
                     if ingredientProgress.total > 0 {
@@ -250,6 +256,7 @@ struct RecipeDetailView: View {
                                 .foregroundStyle(allOwned ? Color("AccentSage") : Color("TextSecondary"))
                             Spacer()
                         }
+                        .frame(maxWidth: .infinity)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .background(
@@ -278,6 +285,7 @@ struct RecipeDetailView: View {
                                 NutrientPillView(label: "Fat", value: String(format: "%.0f", f), unit: "g")
                             }
                         }
+                        .frame(maxWidth: .infinity)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color("BackgroundSecondary"))
@@ -371,7 +379,7 @@ struct RecipeDetailView: View {
                         }
 
                         // Add missing button
-                        if recipe.missedIngredientCount > 0 {
+                        if missingDetailIngredientCount > 0 {
                             Button { addMissingToShoppingList() } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "cart.badge.plus")
@@ -415,10 +423,12 @@ struct RecipeDetailView: View {
                 .padding(20)
                 .padding(.bottom, 40)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: proxy.size.width, alignment: .leading)
+            .clipped()
         }
-    }
-    }
+        }
+    }   // ScrollView
+    }   // recipeContent
 
     // MARK: - Load Detail
     private func loadDetail() async {

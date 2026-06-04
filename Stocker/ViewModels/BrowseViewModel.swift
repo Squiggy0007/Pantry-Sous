@@ -25,16 +25,23 @@ class BrowseViewModel {
 
     // MARK: - Initial Load (page 0)
 
-    func loadRecipes(for category: BrowseCategory, inventory: [Ingredient]) async {
-        // Session cache hit — instant, no network
-        if let hit = sessionCache[category] {
+    func loadRecipes(for category: BrowseCategory, inventory: [Ingredient], force: Bool = false) async {
+        // Session cache hit — instant, no network (skip if force refresh)
+        if !force, let hit = sessionCache[category] {
             browseRecipes = applyMatching(hit, inventory: inventory)
             return
         }
 
-        // Disk cache hit — fast, survives restarts
-        let cacheKey = "browse_\(category.rawValue)"
-        if let diskHit = RecipeDiskCache.load(forKey: cacheKey) {
+        // Clear cache for this category on force refresh
+        if force {
+            sessionCache.removeValue(forKey: category)
+            pageOffsets.removeValue(forKey: category)
+            hasMorePerCategory[category] = true
+        }
+
+        // Disk cache hit — fast, survives restarts (skip if force refresh)
+        let cacheKey = "browse_v2_\(category.rawValue)"
+        if !force, let diskHit = RecipeDiskCache.load(forKey: cacheKey) {
             sessionCache[category] = diskHit
             pageOffsets[category] = diskHit.count
             // Assume more pages exist unless the disk cache is less than a full page
@@ -88,7 +95,7 @@ class BrowseViewModel {
             hasMorePerCategory[category] = newRaw.count >= pageSize
 
             // Keep disk cache current with all loaded pages
-            let cacheKey = "browse_\(category.rawValue)"
+            let cacheKey = "browse_v2_\(category.rawValue)"
             RecipeDiskCache.save(existing, forKey: cacheKey)
 
             browseRecipes = applyMatching(existing, inventory: inventory)

@@ -1,5 +1,12 @@
 # secrets — never commit
 secrets.xcconfig
+*secrets*.xcconfig
+*.local.xcconfig
+GoogleService-Info.plist
+ServiceAccount*.json
+*.p8
+*.p12
+*.mobileprovision
 
 # Xcode
 *.xcuserstate
@@ -7,10 +14,15 @@ xcuserdata/
 *.xccheckout
 *.moved-aside
 DerivedData/
+Archives/
 *.hmap
 *.ipa
+*.app
+*.xcarchive
 *.dSYM.zip
 *.dSYM
+*.xcresult
+build/
 
 # macOS
 .DS_Store
