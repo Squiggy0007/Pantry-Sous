@@ -70,6 +70,19 @@ struct QuantityPickerView: View {
     }
 
     var body: some View {
+        if isBarcodeScanned {
+            BarcodeQuantityWheelView(
+                amount: $amount,
+                unit: unit,
+                containerSize: containerSize?.wrappedValue ?? 0,
+                containerSizeUnit: containerSizeUnit?.wrappedValue
+            )
+        } else {
+            manualQuantityPicker
+        }
+    }
+
+    private var manualQuantityPicker: some View {
         VStack(alignment: .leading, spacing: 12) {
 
             // Category selector
@@ -260,3 +273,85 @@ struct QuantityPickerView: View {
     }
 }
 
+private struct BarcodeQuantityWheelView: View {
+    @Binding var amount: Double
+    let unit: QuantityUnit
+    let containerSize: Double
+    let containerSizeUnit: QuantityUnit?
+
+    private var selectedCount: Binding<Int> {
+        Binding(
+            get: {
+                let rounded = Int(amount.rounded())
+                return min(max(rounded, 1), 99)
+            },
+            set: { newValue in
+                amount = Double(newValue)
+                HapticFeedback.light()
+            }
+        )
+    }
+
+    private var previewText: String {
+        let quantity = IngredientQuantity(amount: amount, unit: unit).displayString
+        guard containerSize > 0, let containerSizeUnit else {
+            return quantity
+        }
+
+        let size = containerSize.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(containerSize))
+            : String(format: "%.2f", containerSize)
+        return "\(quantity) · \(size) \(containerSizeUnit.rawValue) each"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(Color("BackgroundSecondary"))
+                        .frame(height: 48)
+
+                    Picker("Amount", selection: selectedCount) {
+                        ForEach(1...99, id: \.self) { count in
+                            Text("\(count)")
+                                .font(.system(.title, design: .rounded, weight: .semibold))
+                                .tag(count)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(width: 92, height: 136)
+                    .clipped()
+                }
+                .frame(width: 110, height: 136)
+                .accessibilityLabel("Quantity")
+                .accessibilityValue("\(selectedCount.wrappedValue)")
+
+                Text(unit.label(for: amount))
+                    .font(.system(.title2, design: .rounded, weight: .semibold))
+                    .foregroundStyle(Color("TextPrimary"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onAppear {
+                let rounded = Int(amount.rounded())
+                amount = Double(min(max(rounded, 1), 99))
+            }
+
+            HStack(spacing: 6) {
+                Text("Preview:")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("TextSecondary"))
+                Text(previewText)
+                    .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .foregroundStyle(Color("AccentSage"))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
