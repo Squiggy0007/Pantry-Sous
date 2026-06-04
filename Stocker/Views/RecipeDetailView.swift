@@ -16,6 +16,7 @@ struct RecipeDetailView: View {
     @State private var showingAddedToast: Bool = false
     @State private var toastMessage: String = ""
     @State private var showingMadeDishSheet: Bool = false
+    @State private var showingFavoriteLimitAlert: Bool = false
     @State private var servingScale: Double = 1.0
     @ObservedObject private var staplesManager = PantryStaplesManager.shared
 
@@ -137,6 +138,11 @@ struct RecipeDetailView: View {
                         }
                     )
                 }
+            }
+            .alert("Favorite Limit Reached", isPresented: $showingFavoriteLimitAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(FeatureLimits.favoriteLimitMessage)
             }
         }
     }
@@ -452,6 +458,11 @@ struct RecipeDetailView: View {
             }
         } else {
             guard let detail = recipeDetail else { return }
+            guard FeatureLimits.canSaveFavorite(currentCount: savedRecipes.count) else {
+                HapticFeedback.warning()
+                showingFavoriteLimitAlert = true
+                return
+            }
             let ingredientsList = detail.extendedIngredients
                 .map { $0.original ?? $0.name }
                 .joined(separator: "|")

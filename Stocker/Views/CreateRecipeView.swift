@@ -6,6 +6,7 @@ struct CreateRecipeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query private var allIngredients: [Ingredient]
+    @Query private var customRecipes: [CustomRecipe]
 
     // Basic info
     @State private var title: String = ""
@@ -28,6 +29,7 @@ struct CreateRecipeView: View {
     // Upload sheet
     @State private var showingUploadConfirm = false
     @State private var showingSaveToast = false
+    @State private var showingCustomRecipeLimitAlert = false
 
     // Validation
     var isValid: Bool {
@@ -374,11 +376,22 @@ struct CreateRecipeView: View {
             } message: {
                 Text("This will submit your recipe publicly to Spoonacular. Make sure you have an active Spoonacular account.")
             }
+            .alert("Custom Recipe Limit Reached", isPresented: $showingCustomRecipeLimitAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(FeatureLimits.customRecipeLimitMessage)
+            }
         }
     }
 
     // MARK: - Save
     private func saveRecipe() {
+        guard FeatureLimits.canCreateCustomRecipe(currentCount: customRecipes.count) else {
+            HapticFeedback.warning()
+            showingCustomRecipeLimitAlert = true
+            return
+        }
+
         let filteredIngredients = ingredientLines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         let filteredSteps = steps.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
 
