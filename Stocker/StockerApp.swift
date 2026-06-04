@@ -25,6 +25,9 @@ struct StockerApp: App {
         WindowGroup {
             MainTabView()
                 .modelContainer(container)
+                .task {
+                    await FeatureLimits.refreshTestingEnvironment()
+                }
         }
     }
 }
