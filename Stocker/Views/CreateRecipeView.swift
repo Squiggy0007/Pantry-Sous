@@ -14,6 +14,7 @@ private struct ParsedRecipeText: Equatable {
     var steps: [String]
     var notes: String
     var rawLines: [String]
+    var lowConfidenceLines: [String]
     var imageCount: Int
 }
 
@@ -580,6 +581,9 @@ struct CreateRecipeView: View {
 
             let orderedLines = orderRecognizedLines(recognizedLines)
             var parsed = parseRecipeLines(orderedLines.map(\.text), imageCount: imageDataList.count)
+            parsed.lowConfidenceLines = orderedLines
+                .filter { $0.confidence < 0.72 }
+                .map(\.text)
             parsed.ingredients = await canonicalizedIngredientLines(parsed.ingredients)
 
             guard !parsed.ingredients.isEmpty || !parsed.steps.isEmpty else {
@@ -607,10 +611,16 @@ struct CreateRecipeView: View {
         try handler.perform([request])
 
         return (request.results ?? []).compactMap { observation in
-            guard let text = observation.topCandidates(1).first?.string else { return nil }
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let text = candidate.string
             let cleaned = cleanOCRLine(text)
             guard !cleaned.isEmpty else { return nil }
-            return RecognizedRecipeLine(text: cleaned, boundingBox: observation.boundingBox, pageIndex: pageIndex)
+            return RecognizedRecipeLine(
+                text: cleaned,
+                confidence: candidate.confidence,
+                boundingBox: observation.boundingBox,
+                pageIndex: pageIndex
+            )
         }
     }
 
@@ -701,6 +711,7 @@ struct CreateRecipeView: View {
     private struct RecognizedRecipeLine: Identifiable, Equatable {
         let id = UUID()
         let text: String
+        let confidence: Float
         let boundingBox: CGRect
         let pageIndex: Int
     }
@@ -708,7 +719,7 @@ struct CreateRecipeView: View {
     private func parseRecipeLines(_ rawLines: [String], imageCount: Int) -> ParsedRecipeText {
         let lines = rawLines.map(cleanOCRLine).filter { !$0.isEmpty }
         guard !lines.isEmpty else {
-            return ParsedRecipeText(title: "", ingredients: [], steps: [], notes: "", rawLines: [], imageCount: imageCount)
+            return ParsedRecipeText(title: "", ingredients: [], steps: [], notes: "", rawLines: [], lowConfidenceLines: [], imageCount: imageCount)
         }
 
         var ingredients: [String] = []
@@ -781,6 +792,7 @@ struct CreateRecipeView: View {
             steps: uniqueLines(steps),
             notes: uniqueLines(notes).joined(separator: "\n"),
             rawLines: lines,
+            lowConfidenceLines: [],
             imageCount: imageCount
         )
     }
@@ -1036,6 +1048,29 @@ private struct RecipeOCRReviewSheet: View {
                             .foregroundStyle(Color("TextPrimary"))
                     }
 
+                    if !draft.lowConfidenceLines.isEmpty {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Color("DestructiveTerracotta"))
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Review Highlighted Lines")
+                                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                                    .foregroundStyle(Color("TextPrimary"))
+                                Text("OCR was less confident on \(draft.lowConfidenceLines.count) line\(draft.lowConfidenceLines.count == 1 ? "" : "s"). Highlighted rows may need a quick correction.")
+                                    .font(.system(.caption, design: .rounded))
+                                    .foregroundStyle(Color("TextSecondary"))
+                                    .lineSpacing(3)
+                            }
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color("DestructiveTerracotta").opacity(0.12))
+                        )
+                    }
+
                     reviewCard(title: "Recipe Name", icon: "fork.knife") {
                         TextField("Recipe name", text: $draft.title)
                             .font(.system(.body, design: .rounded))
@@ -1154,7 +1189,17 @@ private struct RecipeOCRReviewSheet: View {
                         .font(.system(.body, design: .rounded))
                         .lineLimit(2...)
                         .padding(10)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color("BackgroundSecondary")))
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color("BackgroundSecondary"))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(isLowConfidence(lines.wrappedValue[index])
+                                        ? Color("DestructiveTerracotta").opacity(0.75)
+                                        : .clear,
+                                        lineWidth: 1.5)
+                        )
 
                         Menu {
                             Button {
@@ -1195,10 +1240,17 @@ private struct RecipeOCRReviewSheet: View {
 
     private func rawLineRow(_ line: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(line)
-                .font(.system(.caption, design: .rounded))
-                .foregroundStyle(Color("TextSecondary"))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(line)
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("TextSecondary"))
+                if isLowConfidence(line) {
+                    Label("Check this line", systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(.caption2, design: .rounded, weight: .semibold))
+                        .foregroundStyle(Color("DestructiveTerracotta"))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Menu {
                 Button {
@@ -1227,6 +1279,19 @@ private struct RecipeOCRReviewSheet: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color("BackgroundSecondary")))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isLowConfidence(line) ? Color("DestructiveTerracotta").opacity(0.75) : .clear, lineWidth: 1.5)
+        )
+    }
+
+    private func isLowConfidence(_ line: String) -> Bool {
+        let normalized = normalizeConfidenceLine(line)
+        return draft.lowConfidenceLines.contains { normalizeConfidenceLine($0) == normalized }
+    }
+
+    private func normalizeConfidenceLine(_ line: String) -> String {
+        line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 

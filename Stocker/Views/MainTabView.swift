@@ -90,7 +90,7 @@ struct MainTabView: View {
     }
 }
 
-private enum AppBuildInfo {
+enum AppBuildInfo {
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
     }
@@ -126,7 +126,7 @@ private struct WhatsNewSheet: View {
         (
             icon: "arrow.triangle.2.circlepath",
             title: "Refresh Ingredients",
-            detail: "Settings can now re-sort ingredients, fill matching data, and merge matching entries."
+            detail: "Settings can preview ingredient fixes before applying: matching data, category moves, package cleanup, and merges."
         ),
         (
             icon: "dial.medium.fill",
@@ -137,6 +137,26 @@ private struct WhatsNewSheet: View {
             icon: "shippingbox.circle.fill",
             title: "Cleaner Package Counts",
             detail: "Scanned packages now show as item or items with the size listed after it, like 1 item · 6 oz."
+        ),
+        (
+            icon: "slider.horizontal.3",
+            title: "Editable Scan Details",
+            detail: "Barcode scans still fill everything in, but package count and package size can now be adjusted before saving."
+        ),
+        (
+            icon: "exclamationmark.text.page",
+            title: "OCR Review Hints",
+            detail: "Recipe card imports flag lines that may need a second look before you apply them."
+        ),
+        (
+            icon: "tray.and.arrow.down.fill",
+            title: "Recipe Cache Controls",
+            detail: "Settings now includes a recipe cache reset for forcing fresh Spoonacular recipe results."
+        ),
+        (
+            icon: "paperplane.fill",
+            title: "Beta Feedback",
+            detail: "Settings now has a feedback button that includes the app build and device info automatically."
         )
     ]
 

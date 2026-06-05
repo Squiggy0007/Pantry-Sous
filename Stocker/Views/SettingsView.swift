@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -8,6 +9,9 @@ struct SettingsView: View {
     @AppStorage("hasSeenOnboardingV2") private var hasSeenOnboarding = false
     @State private var isRefreshingIngredients = false
     @State private var refreshMessage: String? = nil
+    @State private var cleanupPreview: IngredientCleanupPreview? = nil
+    @State private var cacheMessage: String? = nil
+    @State private var showingFeedbackShare = false
 
     var body: some View {
         NavigationStack {
@@ -168,7 +172,7 @@ struct SettingsView: View {
                             )
 
                             Button {
-                                Task { await refreshIngredients() }
+                                Task { await prepareIngredientRefreshPreview() }
                             } label: {
                                 HStack {
                                     HStack(spacing: 14) {
@@ -209,6 +213,51 @@ struct SettingsView: View {
                         }
                         .padding(.horizontal, 16)
 
+                        // ── Recipe Cache ─────────────────────────────────
+                        VStack(alignment: .leading, spacing: 0) {
+                            sectionHeader(
+                                title: "Recipes",
+                                subtitle: "Clear saved recipe results when you want a fresh Spoonacular pull"
+                            )
+
+                            Button {
+                                RecipeDiskCache.clearAll()
+                                HapticFeedback.success()
+                                cacheMessage = "Recipe cache cleared."
+                            } label: {
+                                HStack {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "tray.and.arrow.down.fill")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundStyle(Color("AccentSage"))
+                                            .frame(width: 32)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text("Clear Recipe Cache")
+                                                .font(.system(.body, design: .rounded, weight: .medium))
+                                                .foregroundStyle(Color("TextPrimary"))
+                                            if let cacheMessage {
+                                                Text(cacheMessage)
+                                                    .font(.system(.caption, design: .rounded))
+                                                    .foregroundStyle(Color("TextSecondary"))
+                                            }
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Color("TextSecondary").opacity(0.4))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(.plain)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color("CardBackground"))
+                            )
+                        }
+                        .padding(.horizontal, 16)
+
                         // ── Repeat Onboarding ─────────────────────────────
                         VStack(alignment: .leading, spacing: 0) {
                             sectionHeader(title: "Walkthrough", subtitle: nil)
@@ -242,12 +291,54 @@ struct SettingsView: View {
                         }
                         .padding(.horizontal, 16)
 
+                        // ── Beta Feedback ─────────────────────────────────
+                        VStack(alignment: .leading, spacing: 0) {
+                            sectionHeader(
+                                title: "Beta Feedback",
+                                subtitle: "Send build and device details with a note"
+                            )
+
+                            Button {
+                                HapticFeedback.medium()
+                                showingFeedbackShare = true
+                            } label: {
+                                HStack {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "paperplane.fill")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundStyle(Color("AccentSage"))
+                                            .frame(width: 32)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text("Send Beta Feedback")
+                                                .font(.system(.body, design: .rounded, weight: .medium))
+                                                .foregroundStyle(Color("TextPrimary"))
+                                            Text("\(AppBuildInfo.displayVersion) · \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
+                                                .font(.system(.caption, design: .rounded))
+                                                .foregroundStyle(Color("TextSecondary"))
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(Color("TextSecondary").opacity(0.5))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(.plain)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color("CardBackground"))
+                            )
+                        }
+                        .padding(.horizontal, 16)
+
                         // ── App Info ──────────────────────────────────────
                         VStack(alignment: .leading, spacing: 0) {
                             sectionHeader(title: "App Info", subtitle: nil)
 
                             VStack(spacing: 0) {
-                                infoRow(label: "Version", value: "1.0.0")
+                                infoRow(label: "Version", value: AppBuildInfo.displayVersion)
                                 Divider().padding(.leading, 16)
                                 infoRow(label: "Recipe Data", value: "Spoonacular API")
                                 Divider().padding(.leading, 16)
@@ -266,12 +357,27 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
         }
+        .sheet(item: $cleanupPreview) { preview in
+            IngredientCleanupPreviewSheet(
+                preview: preview,
+                onApply: {
+                    applyIngredientRefresh(preview)
+                    cleanupPreview = nil
+                },
+                onCancel: {
+                    cleanupPreview = nil
+                }
+            )
+        }
+        .sheet(isPresented: $showingFeedbackShare) {
+            BetaFeedbackShareSheet(items: [betaFeedbackText()])
+        }
     }
 
     // MARK: - Subviews
 
     @MainActor
-    private func refreshIngredients() async {
+    private func prepareIngredientRefreshPreview() async {
         guard !isRefreshingIngredients else { return }
         isRefreshingIngredients = true
         refreshMessage = nil
@@ -295,12 +401,25 @@ struct SettingsView: View {
             }
         }
 
+        let preview = buildIngredientCleanupPreview(ingredients: ingredients, parsedByName: parsedByName)
+        guard preview.hasChanges else {
+            HapticFeedback.light()
+            refreshMessage = "Everything already looks organized."
+            return
+        }
+
+        cleanupPreview = preview
+    }
+
+    @MainActor
+    private func applyIngredientRefresh(_ preview: IngredientCleanupPreview) {
+        let ingredients = allIngredients
         var updatedCount = 0
         var mergedCount = 0
         var buckets: [String: Ingredient] = [:]
 
         for ingredient in ingredients.sorted(by: { $0.dateAdded < $1.dateAdded }) {
-            if let parsed = parsedByName[ingredient.name.lowercased()] {
+            if let parsed = preview.parsedByName[ingredient.name.lowercased()] {
                 let oldId = ingredient.spoonacularIngredientId
                 let oldName = ingredient.spoonacularIngredientName
                 ingredient.spoonacularIngredientId = parsed.id ?? oldId
@@ -335,31 +454,111 @@ struct SettingsView: View {
         refreshMessage = "\(updatedCount) updated · \(mergedCount) merged"
     }
 
+    private func buildIngredientCleanupPreview(
+        ingredients: [Ingredient],
+        parsedByName: [String: SpoonacularParsedIngredient]
+    ) -> IngredientCleanupPreview {
+        var canonicalUpdates: [IngredientCleanupPreview.NamedChange] = []
+        var categoryMoves: [IngredientCleanupPreview.CategoryMove] = []
+        var packageFixes: [IngredientCleanupPreview.NamedChange] = []
+        var mergeCandidates: [IngredientCleanupPreview.MergeCandidate] = []
+        var buckets: [String: Ingredient] = [:]
+
+        for ingredient in ingredients.sorted(by: { $0.dateAdded < $1.dateAdded }) {
+            if let parsed = parsedByName[ingredient.name.lowercased()] {
+                let proposedId = parsed.id ?? ingredient.spoonacularIngredientId
+                let proposedName = parsed.name ?? ingredient.spoonacularIngredientName
+                if proposedId != ingredient.spoonacularIngredientId || proposedName != ingredient.spoonacularIngredientName {
+                    canonicalUpdates.append(.init(name: ingredient.name, detail: proposedName.isEmpty ? "Spoonacular ID \(proposedId)" : proposedName))
+                }
+            }
+
+            let suggestedCategory = IngredientCategory.suggested(for: ingredient.name)
+            if ingredient.category != suggestedCategory {
+                categoryMoves.append(.init(name: ingredient.name, from: ingredient.category.rawValue, to: suggestedCategory.rawValue))
+            }
+
+            if shouldNormalizeScannedPackageUnit(ingredient) {
+                packageFixes.append(.init(name: ingredient.name, detail: "Show as item(s) instead of \(ingredient.quantityUnit)"))
+            }
+
+            let key = refreshMergeKey(for: ingredient, parsedByName: parsedByName)
+            if let existing = buckets[key] {
+                mergeCandidates.append(.init(sourceName: ingredient.name, destinationName: existing.name))
+            } else {
+                buckets[key] = ingredient
+            }
+        }
+
+        return IngredientCleanupPreview(
+            parsedByName: parsedByName,
+            canonicalUpdates: canonicalUpdates,
+            categoryMoves: categoryMoves,
+            packageFixes: packageFixes,
+            mergeCandidates: mergeCandidates
+        )
+    }
+
     private func refreshMergeKey(for ingredient: Ingredient) -> String {
+        refreshMergeKey(for: ingredient, parsedByName: [:])
+    }
+
+    private func refreshMergeKey(
+        for ingredient: Ingredient,
+        parsedByName: [String: SpoonacularParsedIngredient]
+    ) -> String {
+        let parsed = parsedByName[ingredient.name.lowercased()]
+        let proposedId = parsed?.id ?? ingredient.spoonacularIngredientId
+        let proposedName = parsed?.name ?? ingredient.spoonacularIngredientName
+
         let identity: String
-        if ingredient.spoonacularIngredientId > 0 {
-            identity = "sid:\(ingredient.spoonacularIngredientId)"
-        } else if !ingredient.spoonacularIngredientName.isEmpty {
-            identity = "sname:\(IngredientNormalizer.normalize(ingredient.spoonacularIngredientName))"
+        if proposedId > 0 {
+            identity = "sid:\(proposedId)"
+        } else if !proposedName.isEmpty {
+            identity = "sname:\(IngredientNormalizer.normalize(proposedName))"
         } else {
             identity = "local:\(IngredientNormalizer.normalize(ingredient.name))"
         }
 
+        let unit = shouldNormalizeScannedPackageUnit(ingredient) ? QuantityUnit.item.rawValue : ingredient.quantityUnit
         let containerUnit = ingredient.containerSize > 0 ? ingredient.containerSizeUnit : ""
         return [
             identity,
-            ingredient.quantityUnit,
+            unit,
             String(format: "%.3f", ingredient.containerSize),
             containerUnit
         ].joined(separator: "|")
     }
 
     private func normalizeScannedPackageUnit(_ ingredient: Ingredient) -> Bool {
+        guard shouldNormalizeScannedPackageUnit(ingredient) else { return false }
+        ingredient.quantityUnit = QuantityUnit.item.rawValue
+        return true
+    }
+
+    private func shouldNormalizeScannedPackageUnit(_ ingredient: Ingredient) -> Bool {
         guard let unit = QuantityUnit(rawValue: ingredient.quantityUnit) else { return false }
         guard [.can, .bag, .box, .bottle, .jar, .package, .packet].contains(unit) else { return false }
         guard ingredient.containerSize > 0 || ingredient.hasNutritionData || ingredient.barcode != nil else { return false }
-        ingredient.quantityUnit = QuantityUnit.item.rawValue
         return true
+    }
+
+    private func betaFeedbackText() -> String {
+        """
+        Pantry Sous Beta Feedback
+
+        Build: \(AppBuildInfo.displayVersion)
+        Device: \(UIDevice.current.model)
+        System: \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)
+
+        What happened?
+
+        Steps to reproduce:
+
+        What did you expect?
+
+        Screenshot attached:
+        """
     }
 
     private func mergeIngredientMetadata(from source: Ingredient, into destination: Ingredient) {
@@ -443,4 +642,187 @@ struct SettingsView: View {
     private func divider() -> some View {
         Divider().padding(.leading, 62)
     }
+}
+
+private struct IngredientCleanupPreview: Identifiable {
+    struct NamedChange: Identifiable {
+        let id = UUID()
+        let name: String
+        let detail: String
+    }
+
+    struct CategoryMove: Identifiable {
+        let id = UUID()
+        let name: String
+        let from: String
+        let to: String
+    }
+
+    struct MergeCandidate: Identifiable {
+        let id = UUID()
+        let sourceName: String
+        let destinationName: String
+    }
+
+    let id = UUID()
+    let parsedByName: [String: SpoonacularParsedIngredient]
+    let canonicalUpdates: [NamedChange]
+    let categoryMoves: [CategoryMove]
+    let packageFixes: [NamedChange]
+    let mergeCandidates: [MergeCandidate]
+
+    var hasChanges: Bool {
+        !canonicalUpdates.isEmpty || !categoryMoves.isEmpty || !packageFixes.isEmpty || !mergeCandidates.isEmpty
+    }
+
+    var summary: String {
+        [
+            "\(canonicalUpdates.count) matched",
+            "\(categoryMoves.count) moved",
+            "\(packageFixes.count) package fixes",
+            "\(mergeCandidates.count) merges"
+        ].joined(separator: " · ")
+    }
+}
+
+private struct IngredientCleanupPreviewSheet: View {
+    let preview: IngredientCleanupPreview
+    let onApply: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color("BackgroundPrimary").ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(preview.summary)
+                                .font(.system(.caption, design: .rounded, weight: .semibold))
+                                .foregroundStyle(Color("AccentSage"))
+                            Text("Preview Ingredient Refresh")
+                                .font(.system(.title2, design: .rounded, weight: .bold))
+                                .foregroundStyle(Color("TextPrimary"))
+                            Text("Nothing changes until you tap Apply.")
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(Color("TextSecondary"))
+                        }
+
+                        previewSection(
+                            title: "Spoonacular Matches",
+                            icon: "fork.knife.circle.fill",
+                            isEmpty: preview.canonicalUpdates.isEmpty
+                        ) {
+                            ForEach(preview.canonicalUpdates) { change in
+                                previewRow(title: change.name, detail: change.detail)
+                            }
+                        }
+
+                        previewSection(
+                            title: "Category Moves",
+                            icon: "folder.fill.badge.gearshape",
+                            isEmpty: preview.categoryMoves.isEmpty
+                        ) {
+                            ForEach(preview.categoryMoves) { move in
+                                previewRow(title: move.name, detail: "\(move.from) → \(move.to)")
+                            }
+                        }
+
+                        previewSection(
+                            title: "Package Cleanup",
+                            icon: "shippingbox.circle.fill",
+                            isEmpty: preview.packageFixes.isEmpty
+                        ) {
+                            ForEach(preview.packageFixes) { change in
+                                previewRow(title: change.name, detail: change.detail)
+                            }
+                        }
+
+                        previewSection(
+                            title: "Combine Duplicates",
+                            icon: "arrow.triangle.merge",
+                            isEmpty: preview.mergeCandidates.isEmpty
+                        ) {
+                            ForEach(preview.mergeCandidates) { merge in
+                                previewRow(title: merge.sourceName, detail: "Merge into \(merge.destinationName)")
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle("Refresh Ingredients")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel", action: onCancel)
+                        .foregroundStyle(Color("TextSecondary"))
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Apply", action: onApply)
+                        .font(.system(.body, design: .rounded, weight: .semibold))
+                        .foregroundStyle(Color("AccentSage"))
+                }
+            }
+        }
+    }
+
+    private func previewSection<Content: View>(
+        title: String,
+        icon: String,
+        isEmpty: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color("AccentSage"))
+                Text(title)
+                    .font(.system(.headline, design: .rounded, weight: .bold))
+                    .foregroundStyle(Color("TextPrimary"))
+            }
+
+            if isEmpty {
+                Text("No changes needed.")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("TextSecondary"))
+            } else {
+                content()
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+        )
+    }
+
+    private func previewRow(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                .foregroundStyle(Color("TextPrimary"))
+            Text(detail)
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(Color("TextSecondary"))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color("BackgroundSecondary"))
+        )
+    }
+}
+
+private struct BetaFeedbackShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

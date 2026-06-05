@@ -61,8 +61,8 @@ struct QuantityPickerView: View {
             BarcodeQuantityWheelView(
                 amount: $amount,
                 unit: unit,
-                containerSize: containerSize?.wrappedValue ?? 0,
-                containerSizeUnit: containerSizeUnit?.wrappedValue
+                containerSize: containerSize,
+                containerSizeUnit: containerSizeUnit
             )
         } else {
             manualQuantityPicker
@@ -317,8 +317,10 @@ private struct DecimalQuantityWheelView: View {
 private struct BarcodeQuantityWheelView: View {
     @Binding var amount: Double
     let unit: QuantityUnit
-    let containerSize: Double
-    let containerSizeUnit: QuantityUnit?
+    let containerSize: Binding<Double>?
+    let containerSizeUnit: Binding<QuantityUnit>?
+
+    private let packageSizeUnits: [QuantityUnit] = [.oz, .lbs, .g, .kg, .flOz, .cup]
 
     private var selectedCount: Binding<Int> {
         Binding(
@@ -335,18 +337,25 @@ private struct BarcodeQuantityWheelView: View {
 
     private var previewText: String {
         let quantity = IngredientQuantity(amount: amount, unit: unit).displayString
-        guard containerSize > 0, let containerSizeUnit else {
+        guard let size = containerSize?.wrappedValue,
+              size > 0,
+              let sizeUnit = containerSizeUnit?.wrappedValue
+        else {
             return quantity
         }
 
-        let size = containerSize.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(containerSize))
-            : String(format: "%.2f", containerSize)
-        return "\(quantity) · \(size) \(containerSizeUnit.rawValue) each"
+        let formattedSize = size.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(size))
+            : String(format: "%.2f", size)
+        return "\(quantity) · \(formattedSize) \(sizeUnit.rawValue) each"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("Package Count")
+                .font(.system(.caption, design: .rounded, weight: .medium))
+                .foregroundStyle(Color("TextSecondary"))
+
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 18)
@@ -381,6 +390,49 @@ private struct BarcodeQuantityWheelView: View {
             .onAppear {
                 let rounded = Int(amount.rounded())
                 amount = Double(min(max(rounded, 1), 99))
+            }
+
+            if let containerSize {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Package Size")
+                        .font(.system(.caption, design: .rounded, weight: .medium))
+                        .foregroundStyle(Color("TextSecondary"))
+
+                    HStack(spacing: 10) {
+                        DecimalQuantityWheelView(amount: containerSize, allowZero: true)
+                            .frame(width: 156)
+
+                        if let containerSizeUnit {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(packageSizeUnits, id: \.self) { sizeUnit in
+                                        Button {
+                                            containerSizeUnit.wrappedValue = sizeUnit
+                                            HapticFeedback.light()
+                                        } label: {
+                                            Text(sizeUnit.rawValue)
+                                                .font(.system(.caption, design: .rounded, weight: .medium))
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 8)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .fill(containerSizeUnit.wrappedValue == sizeUnit
+                                                              ? Color("AccentSage")
+                                                              : Color("BackgroundSecondary"))
+                                                )
+                                                .foregroundStyle(containerSizeUnit.wrappedValue == sizeUnit
+                                                                 ? .white
+                                                                 : Color("TextSecondary"))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                            .frame(height: 36)
+                        }
+                    }
+                }
             }
 
             HStack(spacing: 6) {
