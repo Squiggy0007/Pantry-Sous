@@ -13,8 +13,6 @@ struct QuantityPickerView: View {
     var ingredientCategory: IngredientCategory? = nil
 
     @State private var selectedCategory: QuantityCategory
-    @State private var amountText: String
-    @State private var containerSizeText: String = ""
     @State private var showContainerSize: Bool = false
 
     init(amount: Binding<Double>, unit: Binding<QuantityUnit>, ingredientName: String = "",
@@ -40,18 +38,7 @@ struct QuantityPickerView: View {
         }
         _selectedCategory = State(initialValue: initialCategory)
 
-        _amountText = State(initialValue: {
-            let a = amount.wrappedValue
-            return a.truncatingRemainder(dividingBy: 1) == 0
-                ? String(Int(a))
-                : String(format: "%.1f", a)
-        }())
-
         let cs = containerSize?.wrappedValue ?? 0.0
-        _containerSizeText = State(initialValue: cs > 0
-            ? (cs.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(cs)) : String(format: "%.1f", cs))
-            : ""
-        )
         _showContainerSize = State(initialValue: initialCategory == .container && cs > 0)
     }
 
@@ -130,26 +117,9 @@ struct QuantityPickerView: View {
                             .font(.system(.caption, design: .rounded, weight: .medium))
                             .foregroundStyle(Color("TextSecondary"))
 
-                        TextField("0", text: $amountText)
-                            .font(.system(.title3, design: .rounded, weight: .semibold))
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.center)
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color("CardBackground"))
-                            )
-                            .onChange(of: amountText) { _, newValue in
-                                let filtered = newValue.filter { "0123456789.".contains($0) }
-                                if filtered != newValue {
-                                    amountText = filtered
-                                }
-                                if let parsed = Double(filtered), parsed > 0 {
-                                    amount = parsed
-                                }
-                            }
+                        DecimalQuantityWheelView(amount: $amount, allowZero: false)
                     }
-                    .frame(width: 100)
+                    .frame(width: 156)
                 }
 
                 // Unit picker
@@ -199,25 +169,10 @@ struct QuantityPickerView: View {
                             .foregroundStyle(Color("TextSecondary").opacity(0.6))
                     }
                     HStack(spacing: 8) {
-                        TextField("e.g. 12.5", text: $containerSizeText)
-                            .font(.system(.subheadline, design: .rounded, weight: .semibold))
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.center)
-                            .padding(10)
-                            .frame(width: 100)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color("CardBackground"))
-                            )
-                            .onChange(of: containerSizeText) { _, newValue in
-                                let filtered = newValue.filter { "0123456789.".contains($0) }
-                                if filtered != newValue { containerSizeText = filtered }
-                                if let parsed = Double(filtered), parsed > 0 {
-                                    containerSize?.wrappedValue = parsed
-                                } else {
-                                    containerSize?.wrappedValue = 0.0
-                                }
-                            }
+                        if let containerSize {
+                            DecimalQuantityWheelView(amount: containerSize, allowZero: true)
+                                .frame(width: 156)
+                        }
 
                         // Size unit picker (weight/volume only)
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -270,6 +225,92 @@ struct QuantityPickerView: View {
                     .foregroundStyle(Color("AccentSage"))
             }
         }
+    }
+}
+
+private struct DecimalQuantityWheelView: View {
+    @Binding var amount: Double
+    let allowZero: Bool
+
+    @State private var whole: Int
+    @State private var tenths: Int
+    @State private var hundredths: Int
+
+    init(amount: Binding<Double>, allowZero: Bool) {
+        _amount = amount
+        self.allowZero = allowZero
+        let parts = Self.parts(from: amount.wrappedValue, allowZero: allowZero)
+        _whole = State(initialValue: parts.whole)
+        _tenths = State(initialValue: parts.tenths)
+        _hundredths = State(initialValue: parts.hundredths)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            wheel(selection: $whole, range: (allowZero ? 0 : 1)...99, label: "Whole amount")
+
+            Text(".")
+                .font(.system(.title2, design: .rounded, weight: .bold))
+                .foregroundStyle(Color("TextSecondary"))
+                .frame(width: 14)
+
+            wheel(selection: $tenths, range: 0...9, label: "Tenths")
+            wheel(selection: $hundredths, range: 0...9, label: "Hundredths")
+        }
+        .frame(height: 118)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color("BackgroundSecondary"))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color("TextSecondary").opacity(0.12), lineWidth: 1)
+        )
+        .onAppear {
+            syncFromAmount()
+        }
+        .onChange(of: whole) { _, _ in updateAmount() }
+        .onChange(of: tenths) { _, _ in updateAmount() }
+        .onChange(of: hundredths) { _, _ in updateAmount() }
+        .onChange(of: amount) { _, _ in syncFromAmount() }
+    }
+
+    private func wheel(selection: Binding<Int>, range: ClosedRange<Int>, label: String) -> some View {
+        Picker(label, selection: selection) {
+            ForEach(Array(range), id: \.self) { value in
+                Text("\(value)")
+                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .tag(value)
+            }
+        }
+        .pickerStyle(.wheel)
+        .labelsHidden()
+        .frame(width: 46, height: 118)
+        .clipped()
+    }
+
+    private func updateAmount() {
+        let value = Double(whole) + (Double(tenths) / 10.0) + (Double(hundredths) / 100.0)
+        amount = allowZero ? value : max(value, 0.01)
+        HapticFeedback.light()
+    }
+
+    private func syncFromAmount() {
+        let parts = Self.parts(from: amount, allowZero: allowZero)
+        if whole != parts.whole { whole = parts.whole }
+        if tenths != parts.tenths { tenths = parts.tenths }
+        if hundredths != parts.hundredths { hundredths = parts.hundredths }
+    }
+
+    private static func parts(from amount: Double, allowZero: Bool) -> (whole: Int, tenths: Int, hundredths: Int) {
+        let minValue = allowZero ? 0.0 : 1.0
+        let clamped = min(max(amount, minValue), 99.99)
+        let cents = Int((clamped * 100).rounded())
+        return (
+            whole: cents / 100,
+            tenths: (cents % 100) / 10,
+            hundredths: cents % 10
+        )
     }
 }
 

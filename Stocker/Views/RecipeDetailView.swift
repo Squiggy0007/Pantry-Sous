@@ -44,14 +44,14 @@ struct RecipeDetailView: View {
     var ingredientProgress: (owned: Int, total: Int) {
         let total = nonStapleIngredients.count
         let owned = nonStapleIngredients.filter {
-            IngredientNormalizer.matches($0.name, against: inventoryNames)
+            IngredientNormalizer.matches($0, against: allIngredients)
         }.count
         return (owned, total)
     }
 
     var missingDetailIngredientCount: Int {
         nonStapleIngredients.filter {
-            !IngredientNormalizer.matches($0.name, against: inventoryNames)
+            !IngredientNormalizer.matches($0, against: allIngredients)
         }.count
     }
 
@@ -308,10 +308,7 @@ struct RecipeDetailView: View {
 
                         // Regular ingredients — check vs missing
                         ForEach(nonStapleIngredients) { ingredient in
-                            let isOwned = IngredientNormalizer.matches(
-                                ingredient.name,
-                                against: inventoryNames
-                            )
+                            let isOwned = IngredientNormalizer.matches(ingredient, against: allIngredients)
 
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: isOwned
@@ -495,10 +492,7 @@ struct RecipeDetailView: View {
             // Skip staples
             if staplesManager.isActiveStaple(ingredient.name) { continue }
 
-            let isOwned = IngredientNormalizer.matches(
-                ingredient.name,
-                against: inventoryNames
-            )
+            let isOwned = IngredientNormalizer.matches(ingredient, against: allIngredients)
             if isOwned { continue }
 
             let recipeAmount = (ingredient.amount ?? 1) * servingScale

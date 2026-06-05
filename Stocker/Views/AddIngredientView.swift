@@ -203,7 +203,7 @@ struct AddIngredientView: View {
                         }
 
                         Button {
-                            saveIngredient()
+                            Task { await saveIngredient() }
                         } label: {
                             Text("Add to Ingredients")
                                 .font(.system(.body, design: .rounded, weight: .semibold))
@@ -261,9 +261,13 @@ struct AddIngredientView: View {
                 // Restore all fields from memory
                 name = memory.productName
                 selectedCategory = memory.category
-                unit = QuantityUnit(rawValue: memory.unitRaw) ?? .item
+                unit = .item
                 containerSize = memory.containerSize
                 containerSizeUnit = QuantityUnit(rawValue: memory.containerSizeUnitRaw) ?? .oz
+                if memory.unitRaw != QuantityUnit.item.rawValue {
+                    memory.unitRaw = QuantityUnit.item.rawValue
+                    try? modelContext.save()
+                }
                 nutrition = NutritionData(
                     servingSize: memory.servingSize,
                     calories: memory.calories,
@@ -325,18 +329,9 @@ struct AddIngredientView: View {
 
             var hintParts: [String] = []
 
-            // --- Packaging → container unit ---
-            let packagingStr   = product["packaging"] as? String ?? ""
-            let packagingTags  = (product["packaging_tags"] as? [String] ?? []).joined(separator: " ")
-            let packagingLower = (packagingStr + " " + packagingTags).lowercased()
-            if      packagingLower.contains("can") || packagingLower.contains("tin") { unit = .can;     hintParts.append("can")       }
-            else if packagingLower.contains("bottle")                                { unit = .bottle;  hintParts.append("bottle")    }
-            else if packagingLower.contains("jar")                                   { unit = .jar;     hintParts.append("jar")       }
-            else if packagingLower.contains("bag") || packagingLower.contains("pouch") { unit = .bag;  hintParts.append("bag")       }
-            else if packagingLower.contains("box") || packagingLower.contains("carton") { unit = .box; hintParts.append("box")       }
-            else if packagingLower.contains("packet")                                { unit = .packet;  hintParts.append("packet")   }
-            else if packagingLower.contains("tub") || packagingLower.contains("container") { unit = .package; hintParts.append("container") }
-            else if packagingLower.contains("pack")                                  { unit = .package; hintParts.append("package")  }
+            // Scanned package counts are intentionally shown as item/items.
+            unit = .item
+            hintParts.append("item")
 
             // --- Quantity string → container size ---
             let quantityRaw = product["quantity"] as? String ?? ""
@@ -352,43 +347,17 @@ struct AddIngredientView: View {
             // --- Category ---
             let categoryTags = product["categories_tags"] as? [String] ?? []
             selectedCategory = detectCategory(from: categoryTags, productName: name)
-            normalizeScannedSeasoningUnit(hintParts: &hintParts)
             hintParts.append(selectedCategory.rawValue)
 
             // Hard override: canned/jarred unit can't be fresh produce
             if selectedCategory == .produce {
                 let nameLower = name.lowercased()
-                let isCannedByUnit = (unit == .can || unit == .jar)
                 let isCannedByName = nameLower.contains("canned") || nameLower.contains("tinned")
                 let isCannedByTag  = categoryTags.joined(separator: " ").lowercased().contains("canned") ||
                                      categoryTags.joined(separator: " ").lowercased().contains("preserved")
-                if isCannedByUnit || isCannedByName || isCannedByTag {
+                if isCannedByName || isCannedByTag {
                     selectedCategory = .pantry
                     if !hintParts.isEmpty { hintParts[hintParts.count - 1] = selectedCategory.rawValue }
-                }
-            }
-
-            // Infer container type from category when packaging fields were empty
-            if unit == .item && containerSize > 0 {
-                switch selectedCategory {
-                case .pantry:
-                    let n = name.lowercased()
-                    let isDry = n.contains("pasta") || n.contains("noodle") || n.contains("cereal") ||
-                                n.contains("cracker") || n.contains("rice") || n.contains("oat") ||
-                                n.contains("flour") || n.contains("sugar") || n.contains("chip") ||
-                                n.contains("cookie") || n.contains("pretzel")
-                    unit = isDry ? .box : .can
-                    hintParts.insert(isDry ? "box" : "can", at: 0)
-                case .dairy:
-                    unit = .bottle; hintParts.insert("bottle", at: 0)
-                case .herbsAndSpices:
-                    unit = .bottle; hintParts.insert("bottle", at: 0)
-                case .produce:
-                    break
-                default:
-                    if containerSizeUnit == .oz || containerSizeUnit == .g {
-                        unit = .bag; hintParts.insert("bag", at: 0)
-                    }
                 }
             }
 
@@ -528,18 +497,6 @@ struct AddIngredientView: View {
             : String(format: "%.1f", size)
     }
 
-    private func normalizeScannedSeasoningUnit(hintParts: inout [String]) {
-        guard selectedCategory == .herbsAndSpices else { return }
-        guard [.item, .bag, .box, .package, .packet].contains(unit) else { return }
-
-        unit = .bottle
-        if let index = hintParts.firstIndex(where: { ["bag", "box", "package", "packet", "container"].contains($0) }) {
-            hintParts[index] = "bottle"
-        } else {
-            hintParts.insert("bottle", at: 0)
-        }
-    }
-
     /// Maps Open Food Facts category tags to IngredientCategory.
     /// IMPORTANT: canned/sauces/preserved checked BEFORE produce because OFX tags
     /// tomato-based products with both "en:vegetables-based-foods" AND "en:sauces".
@@ -607,13 +564,15 @@ struct AddIngredientView: View {
 
     // MARK: - Save
 
-    private func saveIngredient() {
+    @MainActor
+    private func saveIngredient() async {
         guard !name.isEmpty else {
             errorMessage = "Please enter an ingredient name"
             return
         }
 
         let finalName = name.titleCased()
+        let parsedIngredient = (try? await SpoonacularService.shared.parseIngredients([finalName]))?.first
 
         // Persist barcode memory for future scans of the same product
         if !scannedBarcode.isEmpty,
@@ -652,6 +611,10 @@ struct AddIngredientView: View {
             $0.containerSizeUnit == containerSizeUnitRaw
         }) {
             existing.quantityAmount += amount
+            if let parsedIngredient {
+                existing.spoonacularIngredientId = parsedIngredient.id ?? existing.spoonacularIngredientId
+                existing.spoonacularIngredientName = parsedIngredient.name ?? existing.spoonacularIngredientName
+            }
             // Update nutrition data if this is a fresh scan with richer data
             if nutrition.hasData {
                 existing.servingSize   = nutrition.servingSize
@@ -677,6 +640,8 @@ struct AddIngredientView: View {
                 barcode: scannedBarcode.isEmpty ? nil : scannedBarcode,
                 containerSize: containerSize,
                 containerSizeUnit: containerSize > 0 ? containerSizeUnit : nil,
+                spoonacularIngredientId: parsedIngredient?.id ?? 0,
+                spoonacularIngredientName: parsedIngredient?.name ?? "",
                 servingSize:    nutrition.servingSize,
                 calories:       nutrition.calories,
                 protein:        nutrition.protein,

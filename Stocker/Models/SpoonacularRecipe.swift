@@ -117,6 +117,15 @@ struct ExtendedIngredient: Codable, Identifiable {
     let unit: String?
 }
 
+struct SpoonacularParsedIngredient: Codable {
+    let id: Int?
+    let name: String?
+    let original: String?
+    let originalName: String?
+    let amount: Double?
+    let unit: String?
+}
+
 // MARK: - Instructions
 struct AnalyzedInstruction: Codable {
     let name: String

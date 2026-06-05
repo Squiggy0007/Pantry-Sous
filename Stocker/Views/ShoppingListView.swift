@@ -342,10 +342,14 @@ struct ShoppingListView: View {
                     // fall through to API fetch below
                 } else {
                     scanName           = memory.productName
-                    scanUnit           = QuantityUnit(rawValue: memory.unitRaw) ?? .item
+                    scanUnit           = .item
                     scanCategory       = memory.category
                     scanContainerSize  = memory.containerSize
                     scanContainerSizeUnit = QuantityUnit(rawValue: memory.containerSizeUnitRaw) ?? .oz
+                    if memory.unitRaw != QuantityUnit.item.rawValue {
+                        memory.unitRaw = QuantityUnit.item.rawValue
+                        try? modelContext.save()
+                    }
                     scanServingSize    = memory.servingSize
                     scanCalories       = memory.calories
                     scanProtein        = memory.protein
@@ -386,17 +390,8 @@ struct ShoppingListView: View {
                 else                       { fullName = "" }
                 scanName = fullName.titleCased()
 
-                // Packaging → container unit
-                let packagingLower = (product["packaging"] as? String ?? "").lowercased()
-                if !packagingLower.isEmpty {
-                    if      packagingLower.contains("can") || packagingLower.contains("tin") { scanUnit = .can    }
-                    else if packagingLower.contains("bottle")    { scanUnit = .bottle  }
-                    else if packagingLower.contains("jar")       { scanUnit = .jar     }
-                    else if packagingLower.contains("bag") || packagingLower.contains("pouch") { scanUnit = .bag }
-                    else if packagingLower.contains("box") || packagingLower.contains("carton") { scanUnit = .box }
-                    else if packagingLower.contains("packet")    { scanUnit = .packet  }
-                    else if packagingLower.contains("pack")      { scanUnit = .package }
-                }
+                // Scanned package counts are intentionally shown as item/items.
+                scanUnit = .item
 
                 // Quantity → container size
                 if let quantityRaw = product["quantity"] as? String, !quantityRaw.isEmpty {
@@ -410,7 +405,6 @@ struct ShoppingListView: View {
                 // Category
                 let tags = product["categories_tags"] as? [String] ?? []
                 scanCategory = detectShopCategory(from: tags, name: scanName)
-                normalizeShopScannedSeasoningUnit()
 
                 // ── Step 2: USDA — accurate nutrition by product name ──
                 let usdaNutr = await USDANutritionService.lookupNutrition(forProduct: scanName)
@@ -576,12 +570,6 @@ struct ShoppingListView: View {
         if t.contains("cereals") || t.contains("pasta") || t.contains("breads") || t.contains("flour") || t.contains("rice") || t.contains("crackers") || t.contains("snack") { return .pantry }
         if t.contains("spices") || t.contains("herbs") || t.contains("seasonings") { return .herbsAndSpices }
         return nameSuggestion
-    }
-
-    private func normalizeShopScannedSeasoningUnit() {
-        guard scanCategory == .herbsAndSpices else { return }
-        guard [.item, .bag, .box, .package, .packet].contains(scanUnit) else { return }
-        scanUnit = .bottle
     }
 
     // MARK: - Existing Helpers

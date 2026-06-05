@@ -37,7 +37,8 @@ class ShoppingItem {
 
     var displayQuantity: String {
         let unit = QuantityUnit(rawValue: quantityUnit) ?? .item
-        let quantity = IngredientQuantity(amount: quantityAmount, unit: unit)
+        let displayUnit: QuantityUnit = containerSize > 0 ? .item : unit
+        let quantity = IngredientQuantity(amount: quantityAmount, unit: displayUnit)
         var base = quantity.displayString
         if containerSize > 0, !containerSizeUnit.isEmpty,
            let sizeUnit = QuantityUnit(rawValue: containerSizeUnit) {

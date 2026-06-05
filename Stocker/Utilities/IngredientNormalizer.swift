@@ -1213,8 +1213,13 @@ struct IngredientNormalizer {
         "bread crumbs": "breadcrumbs",
         "panko": "panko",
         "panko breadcrumbs": "panko",
+        "panko bread crumbs": "panko",
+        "plain breadcrumbs": "breadcrumbs",
+        "plain bread crumbs": "breadcrumbs",
         "seasoned breadcrumbs": "breadcrumbs",
+        "seasoned bread crumbs": "breadcrumbs",
         "italian breadcrumbs": "breadcrumbs",
+        "italian bread crumbs": "breadcrumbs",
         "croutons": "croutons",
 
         // ── PANTRY — CRACKERS & SNACKS ────────────────────────────────────
@@ -1451,10 +1456,14 @@ struct IngredientNormalizer {
         "dried basil": "basil",
         "dried oregano": "oregano",
         "oregano flakes": "oregano",   // Spoonacular sometimes returns "Oregano Flakes"
+        "oregano leaves": "oregano",
         "dried oregano flakes": "oregano",
         "dried thyme": "thyme",
+        "thyme leaves": "thyme",
         "dried rosemary": "rosemary",
+        "rosemary leaves": "rosemary",
         "dried parsley": "parsley",
+        "parsley flakes": "parsley",
         "dried dill": "dill",
         "dried sage": "sage",
         "dried mint": "mint",
@@ -1553,7 +1562,7 @@ struct IngredientNormalizer {
 
     // MARK: - Normalize
     static func normalize(_ ingredientName: String) -> String {
-        let lowercased = ingredientName.lowercased().trimmingCharacters(in: .whitespaces)
+        let lowercased = canonicalText(ingredientName)
         return normalizationMap[lowercased] ?? lowercased
     }
 
@@ -1561,19 +1570,47 @@ struct IngredientNormalizer {
     // Returns both original lowercased name AND normalized family name
     // so "Jasmine Rice" matches both "jasmine rice" and "rice" in recipes
     static func normalizedNames(for ingredientName: String) -> [String] {
-        let lowercased = ingredientName.lowercased().trimmingCharacters(in: .whitespaces)
+        let lowercased = ingredientName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = canonicalText(ingredientName)
         var names = Set<String>()
-        names.insert(lowercased)
-        if let normalized = normalizationMap[lowercased] {
-            names.insert(normalized)
+        for candidate in candidateTexts(from: [lowercased, cleaned]) {
+            names.insert(candidate)
+            if let normalized = normalizationMap[candidate] {
+                names.insert(normalized)
+            }
         }
-        for embeddedName in embeddedBaseProductNames(in: lowercased) {
+        for embeddedName in embeddedBaseProductNames(in: cleaned) {
             names.insert(embeddedName)
             if let normalized = normalizationMap[embeddedName] {
                 names.insert(normalized)
             }
         }
         return Array(names)
+    }
+
+    private static func canonicalText(_ ingredientName: String) -> String {
+        ingredientName
+            .lowercased()
+            .replacingOccurrences(of: "&", with: " ")
+            .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func candidateTexts(from rawTexts: [String]) -> Set<String> {
+        var candidates = Set(rawTexts.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+
+        for text in Array(candidates) {
+            let words = text.split(separator: " ").map(String.init)
+            guard let last = words.last, last.count > 3, last.hasSuffix("s") else { continue }
+            let singular = (words.dropLast() + [String(last.dropLast())]).joined(separator: " ")
+            candidates.insert(singular)
+        }
+
+        return candidates
     }
 
     private static func embeddedBaseProductNames(in name: String) -> [String] {
@@ -1599,7 +1636,11 @@ struct IngredientNormalizer {
             "soy sauce", "hot sauce", "bbq sauce", "barbecue sauce", "teriyaki sauce",
             "jerk seasoning", "jerk marinade", "jamaican jerk", "caribbean jerk",
             "peanut butter", "almond butter", "coconut milk", "coconut cream",
-            "vanilla extract", "almond extract", "lemon extract", "orange extract"
+            "vanilla extract", "almond extract", "lemon extract", "orange extract",
+            "breadcrumbs", "bread crumbs", "panko", "panko breadcrumbs",
+            "plain breadcrumbs", "plain bread crumbs", "seasoned breadcrumbs",
+            "seasoned bread crumbs", "italian breadcrumbs", "italian bread crumbs",
+            "graham crackers", "saltine crackers", "ritz crackers"
         ]
 
         let baseMatches = baseProductPhrases.filter { candidate in
@@ -1615,14 +1656,26 @@ struct IngredientNormalizer {
         let seasoningProductNames: Set<String> = [
             "basil", "oregano", "thyme", "rosemary", "parsley", "dill", "sage",
             "mint", "cilantro", "chives", "tarragon", "marjoram", "bay leaf",
+            "basil leaves", "oregano leaves", "thyme leaves", "rosemary leaves",
+            "parsley flakes", "dill weed",
             "chili powder", "garlic powder", "onion powder", "ginger powder",
             "curry powder", "cumin", "paprika", "smoked paprika", "cayenne",
             "cayenne pepper", "red pepper flakes", "pepper flakes",
             "crushed red pepper", "black pepper", "ground black pepper",
-            "ground pepper", "cinnamon", "ground cinnamon", "nutmeg",
+            "ground pepper", "white pepper", "cinnamon", "ground cinnamon", "nutmeg",
             "ground nutmeg", "cloves", "ground cloves", "turmeric",
             "ground turmeric", "italian seasoning", "taco seasoning",
-            "fajita seasoning", "jerk seasoning", "old bay", "garam masala"
+            "fajita seasoning", "jerk seasoning", "old bay", "garam masala",
+            "coriander", "ground coriander", "cardamom", "ground cardamom",
+            "allspice", "ground allspice", "mustard seeds", "celery seeds",
+            "poppy seeds", "sesame seeds", "fennel seeds", "caraway seeds",
+            "saffron", "sumac", "fenugreek", "za atar", "ras el hanout",
+            "five spice", "chinese five spice", "berbere", "baharat",
+            "ranch seasoning", "onion soup mix", "everything bagel seasoning",
+            "lemon pepper seasoning", "steak seasoning", "montreal steak seasoning",
+            "poultry seasoning", "seafood seasoning", "pumpkin pie spice",
+            "apple pie spice", "garlic salt", "onion salt", "celery salt",
+            "seasoned salt", "smoked salt"
         ]
 
         return Array(seasoningProductNames.filter { candidate in
@@ -1652,6 +1705,44 @@ struct IngredientNormalizer {
         let recipeNames = Set(normalizedNames(for: recipeIngredient))
         let inventoryNames = Set(inventoryIngredients.flatMap { normalizedNames(for: $0) })
         return !recipeNames.isDisjoint(with: inventoryNames)
+    }
+
+    static func matches(
+        recipeIngredientName: String,
+        recipeIngredientId: Int? = nil,
+        against inventoryIngredients: [Ingredient]
+    ) -> Bool {
+        if let recipeIngredientId,
+           recipeIngredientId > 0,
+           inventoryIngredients.contains(where: { $0.spoonacularIngredientId == recipeIngredientId }) {
+            return true
+        }
+
+        let recipeNames = Set(normalizedNames(for: recipeIngredientName))
+        let inventoryNames = Set(inventoryIngredients.flatMap { ingredient in
+            var names = normalizedNames(for: ingredient.name)
+            if !ingredient.spoonacularIngredientName.isEmpty {
+                names.append(contentsOf: normalizedNames(for: ingredient.spoonacularIngredientName))
+            }
+            return names
+        })
+        return !recipeNames.isDisjoint(with: inventoryNames)
+    }
+
+    static func matches(_ recipeIngredient: RecipeIngredient, against inventoryIngredients: [Ingredient]) -> Bool {
+        matches(
+            recipeIngredientName: recipeIngredient.name,
+            recipeIngredientId: recipeIngredient.id,
+            against: inventoryIngredients
+        )
+    }
+
+    static func matches(_ recipeIngredient: ExtendedIngredient, against inventoryIngredients: [Ingredient]) -> Bool {
+        matches(
+            recipeIngredientName: recipeIngredient.name,
+            recipeIngredientId: recipeIngredient.id,
+            against: inventoryIngredients
+        )
     }
 
     // MARK: - Extract Ingredient Name from Recipe Line

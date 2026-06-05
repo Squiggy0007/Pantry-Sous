@@ -15,6 +15,11 @@ class Ingredient {
     var containerSize: Double = 0.0
     /// Unit for containerSize (rawValue of QuantityUnit). Empty string means not set.
     var containerSizeUnit: String = ""
+    /// Cached Spoonacular canonical ingredient id from /recipes/parseIngredients.
+    /// 0 means unknown/unparsed.
+    var spoonacularIngredientId: Int = 0
+    /// Cached Spoonacular canonical ingredient name from /recipes/parseIngredients.
+    var spoonacularIngredientName: String = ""
 
     // MARK: - Nutrition & Label Data (populated from barcode scan)
     var servingSize: String = ""
@@ -44,6 +49,8 @@ class Ingredient {
         barcode: String? = nil,
         containerSize: Double = 0.0,
         containerSizeUnit: QuantityUnit? = nil,
+        spoonacularIngredientId: Int = 0,
+        spoonacularIngredientName: String = "",
         servingSize: String = "",
         calories: Double = 0,
         protein: Double = 0,
@@ -67,6 +74,8 @@ class Ingredient {
         self.dateAdded = Date()
         self.containerSize = containerSize
         self.containerSizeUnit = containerSizeUnit?.rawValue ?? ""
+        self.spoonacularIngredientId = spoonacularIngredientId
+        self.spoonacularIngredientName = spoonacularIngredientName
         self.servingSize = servingSize
         self.calories = calories
         self.protein = protein
@@ -94,16 +103,16 @@ class Ingredient {
     }
 
     var displayQuantity: String {
-        let base = quantity.displayString
         // If a per-container size is set, append it: "3 cans · 12.5 oz"
         if containerSize > 0, !containerSizeUnit.isEmpty,
            let sizeUnit = QuantityUnit(rawValue: containerSizeUnit) {
+            let base = IngredientQuantity(amount: quantityAmount, unit: .item).displayString
             let sizeFormatted = containerSize.truncatingRemainder(dividingBy: 1) == 0
                 ? String(Int(containerSize))
                 : String(format: "%.2f", containerSize)
             return "\(base) · \(sizeFormatted) \(sizeUnit.rawValue)"
         }
-        return base
+        return quantity.displayString
     }
 
 

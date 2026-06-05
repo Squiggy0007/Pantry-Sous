@@ -119,17 +119,12 @@ class BrowseViewModel {
         _ recipes: [SpoonacularRecipe],
         inventory: [Ingredient]
     ) -> [SpoonacularRecipe] {
-        let inventorySet = Set(
-            inventory.flatMap { IngredientNormalizer.normalizedNames(for: $0.name) }
-        )
-
         return recipes.map { recipe in
             var used: [RecipeIngredient] = []
             var missed: [RecipeIngredient] = []
 
             for ingredient in recipe.usedIngredients + recipe.missedIngredients {
-                let names = Set(IngredientNormalizer.normalizedNames(for: ingredient.name))
-                let isOwned = !names.isDisjoint(with: inventorySet)
+                let isOwned = IngredientNormalizer.matches(ingredient, against: inventory)
                 let isStaple = PantryStaplesManager.isStapleSync(ingredient.name)
                 if isOwned || isStaple {
                     used.append(ingredient)

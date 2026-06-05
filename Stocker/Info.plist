@@ -9,6 +9,8 @@
 	</dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Stocker needs camera access to scan barcodes and import recipes from photos.</string>
 	<key>SpoonacularAPIKey</key>
 	<string>$(SPOONACULAR_API_KEY)</string>
 	<key>USDAAPIKey</key>

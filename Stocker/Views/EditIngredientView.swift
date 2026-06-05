@@ -130,7 +130,7 @@ struct EditIngredientView: View {
 
                         // Save button
                         Button {
-                            saveChanges()
+                            Task { await saveChanges() }
                         } label: {
                             Text("Save Changes")
                                 .font(.system(.body, design: .rounded, weight: .semibold))
@@ -200,13 +200,15 @@ struct EditIngredientView: View {
         }
     }
 
-    private func saveChanges() {
+    @MainActor
+    private func saveChanges() async {
         guard !name.isEmpty else {
             errorMessage = "Please enter an ingredient name"
             return
         }
 
         let newName = name.titleCased()
+        let parsedIngredient = (try? await SpoonacularService.shared.parseIngredients([newName]))?.first
 
         // Merge only when name + unit + container size all match exactly (excluding self).
         // Different container sizes (e.g. 12.5 oz can vs 6 oz can) stay as separate entries.
@@ -220,6 +222,10 @@ struct EditIngredientView: View {
         }) {
             // Merge: add this ingredient's amount into the existing one, then delete this one
             existing.quantityAmount += amount
+            if let parsedIngredient {
+                existing.spoonacularIngredientId = parsedIngredient.id ?? existing.spoonacularIngredientId
+                existing.spoonacularIngredientName = parsedIngredient.name ?? existing.spoonacularIngredientName
+            }
             modelContext.delete(ingredient)
         } else {
             // No conflict — just update in place
@@ -229,6 +235,8 @@ struct EditIngredientView: View {
             ingredient.category = selectedCategory
             ingredient.containerSize = containerSize
             ingredient.containerSizeUnit = containerSize > 0 ? containerSizeUnit.rawValue : ""
+            ingredient.spoonacularIngredientId = parsedIngredient?.id ?? ingredient.spoonacularIngredientId
+            ingredient.spoonacularIngredientName = parsedIngredient?.name ?? ingredient.spoonacularIngredientName
         }
 
         try? modelContext.save()

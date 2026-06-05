@@ -4,8 +4,10 @@ import SwiftData
 struct MainTabView: View {
     @State private var selectedTab: Int = 0
     @State private var showingSettings: Bool = false
+    @State private var showingWhatsNew: Bool = false
     @Query private var shoppingItems: [ShoppingItem]
     @AppStorage("hasSeenOnboardingV2") private var hasSeenOnboarding = false
+    @AppStorage("lastSeenWhatsNewBuild") private var lastSeenWhatsNewBuild = ""
 
     var unpurchasedCount: Int {
         shoppingItems.filter { !$0.isPurchased }.count
@@ -48,6 +50,12 @@ struct MainTabView: View {
         .onChange(of: selectedTab) { _, _ in
             HapticFeedback.light()
         }
+        .onAppear {
+            updateWhatsNewVisibility()
+        }
+        .onChange(of: hasSeenOnboarding) { _, _ in
+            updateWhatsNewVisibility()
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
@@ -57,8 +65,157 @@ struct MainTabView: View {
         )) {
             OnboardingSheet {
                 hasSeenOnboarding = true
+                updateWhatsNewVisibility()
             }
         }
+        .sheet(isPresented: $showingWhatsNew, onDismiss: markWhatsNewSeen) {
+            WhatsNewSheet(
+                versionText: AppBuildInfo.displayVersion,
+                onDismiss: {
+                    markWhatsNewSeen()
+                    showingWhatsNew = false
+                }
+            )
+        }
+    }
+
+    private func updateWhatsNewVisibility() {
+        guard hasSeenOnboarding else { return }
+        guard lastSeenWhatsNewBuild != AppBuildInfo.versionBuildKey else { return }
+        showingWhatsNew = true
+    }
+
+    private func markWhatsNewSeen() {
+        lastSeenWhatsNewBuild = AppBuildInfo.versionBuildKey
+    }
+}
+
+private enum AppBuildInfo {
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
+    static var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+    }
+
+    static var versionBuildKey: String {
+        "\(version)(\(build))"
+    }
+
+    static var displayVersion: String {
+        "Version \(version) Beta \(build)"
+    }
+}
+
+private struct WhatsNewSheet: View {
+    let versionText: String
+    let onDismiss: () -> Void
+
+    private let updates: [(icon: String, title: String, detail: String)] = [
+        (
+            icon: "text.viewfinder",
+            title: "Recipe Card Import",
+            detail: "Scan cookbook pages or recipe cards, review the detected ingredients and steps, then import them into custom recipes."
+        ),
+        (
+            icon: "fork.knife.circle.fill",
+            title: "Smarter Matching",
+            detail: "Ingredient matching now uses Spoonacular canonical ingredients first, with local matching as a backup."
+        ),
+        (
+            icon: "arrow.triangle.2.circlepath",
+            title: "Refresh Ingredients",
+            detail: "Settings can now re-sort ingredients, fill matching data, and merge matching entries."
+        ),
+        (
+            icon: "dial.medium.fill",
+            title: "Wheel Quantity Entry",
+            detail: "Manual ingredient quantities now use picker wheels instead of typed numbers."
+        ),
+        (
+            icon: "shippingbox.circle.fill",
+            title: "Cleaner Package Counts",
+            detail: "Scanned packages now show as item or items with the size listed after it, like 1 item · 6 oz."
+        )
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color("BackgroundPrimary").ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(versionText)
+                                .font(.system(.caption, design: .rounded, weight: .semibold))
+                                .foregroundStyle(Color("AccentSage"))
+                            Text("What's New")
+                                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                                .foregroundStyle(Color("TextPrimary"))
+                        }
+                        .padding(.top, 12)
+
+                        VStack(spacing: 12) {
+                            ForEach(updates, id: \.title) { update in
+                                WhatsNewRow(update: update)
+                            }
+                        }
+
+                        Button {
+                            HapticFeedback.medium()
+                            onDismiss()
+                        } label: {
+                            Text("Got It")
+                                .font(.system(.body, design: .rounded, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(Color("AccentSage"))
+                                )
+                        }
+                        .padding(.top, 4)
+                    }
+                    .padding(24)
+                }
+            }
+            .interactiveDismissDisabled()
+        }
+    }
+}
+
+private struct WhatsNewRow: View {
+    let update: (icon: String, title: String, detail: String)
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color("AccentSage").opacity(0.14))
+                    .frame(width: 42, height: 42)
+                Image(systemName: update.icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color("AccentSage"))
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(update.title)
+                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .foregroundStyle(Color("TextPrimary"))
+                Text(update.detail)
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("TextSecondary"))
+                    .lineSpacing(3)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+        )
     }
 }
 

@@ -22,10 +22,6 @@ class SpoonacularService {
         offset: Int = 0
     ) async throws -> [SpoonacularRecipe] {
         if useMockData {
-            let inventoryNames = ingredients.flatMap {
-                IngredientNormalizer.normalizedNames(for: $0.name)
-            }
-
             return mockRecipes.compactMap { recipe in
                 var usedIngredients: [RecipeIngredient] = []
                 var missedIngredients: [RecipeIngredient] = []
@@ -33,14 +29,7 @@ class SpoonacularService {
                 let allIngredients = recipe.usedIngredients + recipe.missedIngredients
 
                 for ingredient in allIngredients {
-                    let ingredientNames = IngredientNormalizer.normalizedNames(
-                        for: ingredient.name
-                    )
-                    let isOwned = inventoryNames.contains { inventoryName in
-                        ingredientNames.contains { ingredientName in
-                            ingredientName == inventoryName
-                        }
-                    }
+                    let isOwned = IngredientNormalizer.matches(ingredient, against: ingredients)
                     let isStaple = PantryStaplesManager.isStapleSync(ingredient.name)
                     if isOwned || isStaple {
                         usedIngredients.append(ingredient)
@@ -103,20 +92,12 @@ class SpoonacularService {
                 from: data
             )
 
-            // Re-run our own normalizer on the API results so card counts
-            // match the same logic used in RecipeDetailView (fixes mismatch
-            // between Spoonacular's internal matching and ours).
-            let inventorySet = Set(
-                ingredients.flatMap { IngredientNormalizer.normalizedNames(for: $0.name) }
-            )
-
             return searchResponse.results.map { recipe in
                 var used: [RecipeIngredient] = []
                 var missed: [RecipeIngredient] = []
 
                 for ingredient in recipe.usedIngredients + recipe.missedIngredients {
-                    let names = Set(IngredientNormalizer.normalizedNames(for: ingredient.name))
-                    let isOwned = !names.isDisjoint(with: inventorySet)
+                    let isOwned = IngredientNormalizer.matches(ingredient, against: ingredients)
                     let isStaple = PantryStaplesManager.isStapleSync(ingredient.name)
                     if isOwned || isStaple {
                         used.append(ingredient)
@@ -229,9 +210,6 @@ class SpoonacularService {
     ) async throws -> [SpoonacularRecipe] {
         if useMockData {
             let recipes = mockBrowseRecipes[category] ?? []
-            let inventoryNames = inventoryIngredients.flatMap {
-                IngredientNormalizer.normalizedNames(for: $0.name)
-            }
 
             return recipes.map { recipe in
                 var usedIngredients: [RecipeIngredient] = []
@@ -240,14 +218,7 @@ class SpoonacularService {
                 let allIngredients = recipe.usedIngredients + recipe.missedIngredients
 
                 for ingredient in allIngredients {
-                    let ingredientNames = IngredientNormalizer.normalizedNames(
-                        for: ingredient.name
-                    )
-                    let isOwned = inventoryNames.contains { inventoryName in
-                        ingredientNames.contains { ingredientName in
-                            ingredientName == inventoryName
-                        }
-                    }
+                    let isOwned = IngredientNormalizer.matches(ingredient, against: inventoryIngredients)
                     let isStaple = PantryStaplesManager.isStapleSync(ingredient.name)
                     if isOwned || isStaple {
                         usedIngredients.append(ingredient)
@@ -424,16 +395,11 @@ class SpoonacularService {
         ingredients: [RecipeIngredient],
         inventoryIngredients: [Ingredient]
     ) -> SpoonacularRecipe {
-        let inventorySet = Set(
-            inventoryIngredients.flatMap { IngredientNormalizer.normalizedNames(for: $0.name) }
-        )
-
         var used: [RecipeIngredient] = []
         var missed: [RecipeIngredient] = []
 
         for ingredient in ingredients {
-            let names = Set(IngredientNormalizer.normalizedNames(for: ingredient.name))
-            let isOwned = !names.isDisjoint(with: inventorySet)
+            let isOwned = IngredientNormalizer.matches(ingredient, against: inventoryIngredients)
             let isStaple = PantryStaplesManager.isStapleSync(ingredient.name)
             if isOwned || isStaple {
                 used.append(ingredient)
@@ -772,6 +738,61 @@ class SpoonacularService {
         data.sugar    = nutrientValue("Sugar")
         data.sodium   = nutrientValue("Sodium")
         return data
+    }
+
+    // MARK: - Parse Ingredients
+    func parseIngredients(_ ingredientLines: [String], servings: Int = 1) async throws -> [SpoonacularParsedIngredient] {
+        let cleanedLines = ingredientLines
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !cleanedLines.isEmpty else { return [] }
+
+        if useMockData {
+            return cleanedLines.map {
+                SpoonacularParsedIngredient(
+                    id: nil,
+                    name: IngredientNormalizer.normalize(IngredientNormalizer.extractIngredientName($0)),
+                    original: $0,
+                    originalName: IngredientNormalizer.extractIngredientName($0),
+                    amount: nil,
+                    unit: nil
+                )
+            }
+        }
+
+        var components = URLComponents(string: "\(baseURL)/recipes/parseIngredients")!
+        components.queryItems = [
+            URLQueryItem(name: "apiKey", value: apiKey),
+            URLQueryItem(name: "language", value: "en")
+        ]
+
+        guard let url = components.url else {
+            throw SpoonacularError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        var form = URLComponents()
+        form.queryItems = [
+            URLQueryItem(name: "ingredientList", value: cleanedLines.joined(separator: "\n")),
+            URLQueryItem(name: "servings", value: "\(servings)"),
+            URLQueryItem(name: "includeNutrition", value: "false")
+        ]
+        request.httpBody = form.percentEncodedQuery?.data(using: .utf8)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw SpoonacularError.invalidResponse
+        }
+
+        do {
+            return try JSONDecoder().decode([SpoonacularParsedIngredient].self, from: data)
+        } catch {
+            throw SpoonacularError.decodingError
+        }
     }
 
     // MARK: - Legacy fetch

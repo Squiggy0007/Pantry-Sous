@@ -164,15 +164,14 @@ struct InventoryView: View {
                     try? modelContext.save()
                 }
 
-                let seasoningUnitFixes = allIngredients.filter { item in
+                let scannedPackageUnitFixes = allIngredients.filter { item in
                     let unit = QuantityUnit(rawValue: item.quantityUnit) ?? .item
-                    return item.category == .herbsAndSpices &&
-                           [.item, .bag, .box, .package, .packet].contains(unit) &&
+                    return [.can, .bag, .box, .bottle, .jar, .package, .packet].contains(unit) &&
                            (item.containerSize > 0 || item.hasNutritionData || item.barcode != nil)
                 }
-                if !seasoningUnitFixes.isEmpty {
-                    for item in seasoningUnitFixes {
-                        item.quantityUnit = QuantityUnit.bottle.rawValue
+                if !scannedPackageUnitFixes.isEmpty {
+                    for item in scannedPackageUnitFixes {
+                        item.quantityUnit = QuantityUnit.item.rawValue
                     }
                     try? modelContext.save()
                 }

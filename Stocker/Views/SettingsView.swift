@@ -1,8 +1,13 @@
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var allIngredients: [Ingredient]
     @ObservedObject var staplesManager = PantryStaplesManager.shared
     @AppStorage("hasSeenOnboardingV2") private var hasSeenOnboarding = false
+    @State private var isRefreshingIngredients = false
+    @State private var refreshMessage: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -155,6 +160,55 @@ struct SettingsView: View {
                         }
                         .padding(.horizontal, 16)
 
+                        // ── Ingredient Maintenance ───────────────────────
+                        VStack(alignment: .leading, spacing: 0) {
+                            sectionHeader(
+                                title: "Ingredients",
+                                subtitle: "Re-sort, canonicalize, and merge matching inventory items"
+                            )
+
+                            Button {
+                                Task { await refreshIngredients() }
+                            } label: {
+                                HStack {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundStyle(Color("AccentSage"))
+                                            .frame(width: 32)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(isRefreshingIngredients ? "Refreshing Ingredients..." : "Refresh Ingredients")
+                                                .font(.system(.body, design: .rounded, weight: .medium))
+                                                .foregroundStyle(Color("TextPrimary"))
+                                            if let refreshMessage {
+                                                Text(refreshMessage)
+                                                    .font(.system(.caption, design: .rounded))
+                                                    .foregroundStyle(Color("TextSecondary"))
+                                            }
+                                        }
+                                    }
+                                    Spacer()
+                                    if isRefreshingIngredients {
+                                        ProgressView()
+                                            .tint(Color("AccentSage"))
+                                    } else {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundStyle(Color("TextSecondary").opacity(0.4))
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isRefreshingIngredients)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color("CardBackground"))
+                            )
+                        }
+                        .padding(.horizontal, 16)
+
                         // ── Repeat Onboarding ─────────────────────────────
                         VStack(alignment: .leading, spacing: 0) {
                             sectionHeader(title: "Walkthrough", subtitle: nil)
@@ -215,6 +269,120 @@ struct SettingsView: View {
     }
 
     // MARK: - Subviews
+
+    @MainActor
+    private func refreshIngredients() async {
+        guard !isRefreshingIngredients else { return }
+        isRefreshingIngredients = true
+        refreshMessage = nil
+        defer { isRefreshingIngredients = false }
+
+        let ingredients = allIngredients
+        guard !ingredients.isEmpty else {
+            refreshMessage = "No ingredients to refresh."
+            return
+        }
+
+        var parsedByName: [String: SpoonacularParsedIngredient] = [:]
+        let namesToParse = ingredients
+            .filter { $0.spoonacularIngredientId == 0 || $0.spoonacularIngredientName.isEmpty }
+            .map { $0.name }
+
+        if !namesToParse.isEmpty,
+           let parsed = try? await SpoonacularService.shared.parseIngredients(namesToParse) {
+            for (index, name) in namesToParse.enumerated() where index < parsed.count {
+                parsedByName[name.lowercased()] = parsed[index]
+            }
+        }
+
+        var updatedCount = 0
+        var mergedCount = 0
+        var buckets: [String: Ingredient] = [:]
+
+        for ingredient in ingredients.sorted(by: { $0.dateAdded < $1.dateAdded }) {
+            if let parsed = parsedByName[ingredient.name.lowercased()] {
+                let oldId = ingredient.spoonacularIngredientId
+                let oldName = ingredient.spoonacularIngredientName
+                ingredient.spoonacularIngredientId = parsed.id ?? oldId
+                ingredient.spoonacularIngredientName = parsed.name ?? oldName
+                if ingredient.spoonacularIngredientId != oldId || ingredient.spoonacularIngredientName != oldName {
+                    updatedCount += 1
+                }
+            }
+
+            let suggestedCategory = IngredientCategory.suggested(for: ingredient.name)
+            if ingredient.category != suggestedCategory {
+                ingredient.category = suggestedCategory
+                updatedCount += 1
+            }
+            if normalizeScannedPackageUnit(ingredient) {
+                updatedCount += 1
+            }
+
+            let key = refreshMergeKey(for: ingredient)
+            if let existing = buckets[key] {
+                existing.quantityAmount += ingredient.quantityAmount
+                mergeIngredientMetadata(from: ingredient, into: existing)
+                modelContext.delete(ingredient)
+                mergedCount += 1
+            } else {
+                buckets[key] = ingredient
+            }
+        }
+
+        try? modelContext.save()
+        HapticFeedback.success()
+        refreshMessage = "\(updatedCount) updated · \(mergedCount) merged"
+    }
+
+    private func refreshMergeKey(for ingredient: Ingredient) -> String {
+        let identity: String
+        if ingredient.spoonacularIngredientId > 0 {
+            identity = "sid:\(ingredient.spoonacularIngredientId)"
+        } else if !ingredient.spoonacularIngredientName.isEmpty {
+            identity = "sname:\(IngredientNormalizer.normalize(ingredient.spoonacularIngredientName))"
+        } else {
+            identity = "local:\(IngredientNormalizer.normalize(ingredient.name))"
+        }
+
+        let containerUnit = ingredient.containerSize > 0 ? ingredient.containerSizeUnit : ""
+        return [
+            identity,
+            ingredient.quantityUnit,
+            String(format: "%.3f", ingredient.containerSize),
+            containerUnit
+        ].joined(separator: "|")
+    }
+
+    private func normalizeScannedPackageUnit(_ ingredient: Ingredient) -> Bool {
+        guard let unit = QuantityUnit(rawValue: ingredient.quantityUnit) else { return false }
+        guard [.can, .bag, .box, .bottle, .jar, .package, .packet].contains(unit) else { return false }
+        guard ingredient.containerSize > 0 || ingredient.hasNutritionData || ingredient.barcode != nil else { return false }
+        ingredient.quantityUnit = QuantityUnit.item.rawValue
+        return true
+    }
+
+    private func mergeIngredientMetadata(from source: Ingredient, into destination: Ingredient) {
+        if destination.barcode == nil { destination.barcode = source.barcode }
+        if destination.spoonacularIngredientId == 0 { destination.spoonacularIngredientId = source.spoonacularIngredientId }
+        if destination.spoonacularIngredientName.isEmpty { destination.spoonacularIngredientName = source.spoonacularIngredientName }
+
+        if !destination.hasNutritionData && source.hasNutritionData {
+            destination.servingSize = source.servingSize
+            destination.calories = source.calories
+            destination.protein = source.protein
+            destination.carbs = source.carbs
+            destination.fat = source.fat
+            destination.fiber = source.fiber
+            destination.sugar = source.sugar
+            destination.sodium = source.sodium
+            destination.cholesterol = source.cholesterol
+            destination.saturatedFat = source.saturatedFat
+            destination.transFat = source.transFat
+        }
+        if destination.allergensList.isEmpty { destination.allergensList = source.allergensList }
+        if destination.ingredientsList.isEmpty { destination.ingredientsList = source.ingredientsList }
+    }
 
     private func sectionHeader(title: String, subtitle: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
